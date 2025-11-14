@@ -1,7 +1,4 @@
-<p align="center">
-  <!-- Logo principal del launcher -->
-  <img src="build/icons/icon.png" width="128" alt="Obsidian Studios Launcher Logo">
-</p>
+<p align="center"><img src="./app/assets/images/SealCircle.png" width="150px" height="150px" alt="aventium softworks"></p>
 
 <h1 align="center">Obsidian Studios Launcher</h1>
 
