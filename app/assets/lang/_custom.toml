@@ -7,12 +7,12 @@ title = "Obsidian Studios"
 mediaDiscordURL = "https://discord.gg/FRsAj5U33A"
 mediaXURL = "https://x.com/MineRolLand1"
 mediaYouTubeURL = "https://www.youtube.com/@ObsidianStudiosMC"
-mediaGitHubURL = "https://obsidianstudioscon.wixsite.com/obsidianstudios"
+mediaGitHubURL = "https://github.com/Pizzha541/ObsidianStudiosLauncher"
 mediaInstagramURL = "#"
-mediaWebsiteURL = "https://obsidianstudioscon.wixsite.com/obsidianstudios"
+mediaWebsiteURL = "#"
 
 [ejs.settings]
-sourceGithubLink = "https://obsidianstudioscon.wixsite.com/obsidianstudios"
+sourceGithubLink = "https://github.com/Pizzha541/ObsidianStudiosLauncher"
 supportLink = "https://discord.gg/yjvjThrhhU"
 
 [ejs.welcome]
