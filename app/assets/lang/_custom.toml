@@ -1,0 +1,21 @@
+# Custom Language File for Launcher Customizer
+
+[ejs.app]
+title = "Obsidian Studios"
+
+[ejs.landing]
+mediaDiscordURL = "https://discord.gg/FRsAj5U33A"
+mediaXURL = "https://x.com/MineRolLand1"
+mediaYouTubeURL = "https://www.youtube.com/@ObsidianStudiosMC"
+mediaGitHubURL = "https://obsidianstudioscon.wixsite.com/obsidianstudios"
+mediaInstagramURL = "#"
+mediaWebsiteURL = "https://obsidianstudioscon.wixsite.com/obsidianstudios"
+
+[ejs.settings]
+sourceGithubLink = "https://obsidianstudioscon.wixsite.com/obsidianstudios"
+supportLink = "https://discord.gg/yjvjThrhhU"
+
+[ejs.welcome]
+welcomeHeader = "BIENVENIDO A OBSIDIAN STUDIOS"
+welcomeDescription = "Bienvenido al launcher oficial de Obsidian Studios. Aquí podrás acceder a nuestros proyectos, mundos, experiencias, series y servidores personalizados. Todo lo que hacemos está creado con dedicación, creatividad y pasión por ofrecer aventuras únicas dentro de Minecraft. Explora, juega, descubre y forma parte de nuestros universos, hechos especialmente para nuestra comunidad."
+welcomeDescCTA = "Estás a solo unos clics de comenzar tu viaje."
