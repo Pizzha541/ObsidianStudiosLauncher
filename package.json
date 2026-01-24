@@ -1,6 +1,6 @@
 {
   "name": "helioslauncher",
-  "version": "1.0.2-obsidian",
+  "version": "1.0.4-obsidian",
   "productName": "Obsidian Studios Client",
   "description": "Modded Minecraft Launcher",
   "author": "Pizzha",
@@ -40,8 +40,8 @@
     "toml": "^3.0.0"
   },
   "devDependencies": {
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "electron": "^39.2.0",
+    "electron-builder": "^26.5.0",
     "eslint": "^8.57.1"
   },
   "repository": {
