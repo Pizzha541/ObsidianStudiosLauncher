@@ -31,8 +31,11 @@ Thumbs.db
 .agents/
 .codex/
 
-# Documentacion interna y manifiestos historicos locales
-docs/
+# Documentacion historica local; solo se versionan las guias vigentes.
+docs/*
+!docs/AUDIT-1.0.9.md
+!docs/RELEASE-1.0.9.md
+!docs/CONTENT-AUTOMATION.md
 
 # Recursos antiguos que no forman parte del launcher actual
 Minecraft.ttf

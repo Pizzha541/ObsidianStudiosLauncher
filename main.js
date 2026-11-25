@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const AdmZip = require('adm-zip')
@@ -7,12 +7,13 @@ const https = require('https')
 const http = require('http')
 const crypto = require('crypto')
 const os = require('os')
+const net = require('net')
 const { Transform } = require('stream')
 const { pipeline } = require('stream/promises')
 const childProcess = require('child_process')
 const { Client, Authenticator } = require('minecraft-launcher-core')
 const { Auth: MicrosoftAuth, lexicon: msmcLexicon } = require('msmc')
-const extractZip = require('extract-zip')
+const { autoUpdater } = require('electron-updater')
 
 let win
 let minecraftProcess = null
@@ -29,11 +30,16 @@ let cachedServerList = []
 let remoteServerList = []
 let localServerList = []
 let remoteCatalogMessage = null
+let remoteNewsList = []
+let contentSource = 'local'
 let discordUser = null
 let minecraftProfile = null
 let discordCallbackServer = null
 let discordCallbackTimer = null
 let launcherUpdateInProgress = false
+let launcherUpdateReady = false
+let launcherUpdateCheckManual = false
+let activeLauncherUpdate = null
 let pendingDeepLink = ''
 let activeDownloadStream = null
 let currentDownloadPaused = false
@@ -42,8 +48,10 @@ let activeDownloadState = null
 
 const DISCORD_CLIENT_ID = '1503987372289949836'
 const DISCORD_GUILD_ID = '1515139525624725616'
-const CONFIG_URL = 'https://gist.githubusercontent.com/Pizzha541/aec40d00b8ee727c8dfc6f8c1a778514/raw/gistfile1.txt'
+const CONTENT_URL = 'https://raw.githubusercontent.com/Pizzha541/ObsidianStudiosLauncher/main/content/launcher-content.json'
+const LEGACY_CONFIG_URL = 'https://gist.githubusercontent.com/Pizzha541/aec40d00b8ee727c8dfc6f8c1a778514/raw/gistfile1.txt'
 const LAUNCHER_UPDATE_URL = 'https://gist.githubusercontent.com/Pizzha541/32889023a7d8f63c93130e44197ffe6d/raw'
+const GITHUB_RELEASES_API_URL = 'https://api.github.com/repos/Pizzha541/ObsidianStudiosLauncher/releases/latest'
 const MINECRAFT_PROFILE_URL = 'https://api.minecraftservices.com/minecraft/profile'
 const DISCORD_REDIRECT_PORT = 53124
 const DISCORD_REDIRECT_URI = `http://127.0.0.1:${DISCORD_REDIRECT_PORT}/callback`
@@ -55,6 +63,8 @@ const SESSION_FILE = path.join(DATA_DIR, 'session.json')
 const MINECRAFT_PROFILE_FILE = path.join(DATA_DIR, 'minecraft-profile.json')
 const MINECRAFT_DEFAULTS_FILE = path.join(DATA_DIR, 'minecraft-defaults.json')
 const LOCAL_CONFIG_FILE = path.join(__dirname, 'data', 'proyectos.json')
+const LOCAL_CONTENT_FILE = path.join(__dirname, 'content', 'launcher-content.json')
+const CONTENT_CACHE_FILE = path.join(DATA_DIR, 'content-cache.json')
 const LOCAL_INSTANCES_FILE = path.join(DATA_DIR, 'local-instances.json')
 const LOCAL_PACKS_DIR = path.join(DATA_DIR, 'local-packs')
 const LOCAL_IMAGES_DIR = path.join(DATA_DIR, 'local-images')
@@ -76,7 +86,40 @@ const JAVA_DIR = path.join(DATA_DIR, 'java')
 const PLAYTIME_FILE = path.join(DATA_DIR, 'playtime.json')
 const LAUNCHER_UPDATE_DIR = path.join(DATA_DIR, 'launcher-updates')
 const DOWNLOAD_CACHE_DIR = path.join(DATA_DIR, 'download-cache')
+const LOG_FILE = path.join(DATA_DIR, 'launcher.log')
+const MAX_LOG_BYTES = 2 * 1024 * 1024
 const MODRINTH_API_URL = 'https://api.modrinth.com/v2'
+
+function isSafeExternalUrl(value) {
+    try {
+        const parsed = new URL(String(value || '').trim())
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return false
+        const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+        if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal')) return false
+        if (net.isIP(hostname) === 4) {
+            const parts = hostname.split('.').map(Number)
+            if (parts[0] === 0 || parts[0] === 10 || parts[0] === 127 || parts[0] >= 224) return false
+            if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return false
+            if (parts[0] === 169 && parts[1] === 254) return false
+            if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return false
+            if (parts[0] === 192 && parts[1] === 168) return false
+        }
+        if (net.isIP(hostname) === 6 && (/^(?:0*:)*0*1$/.test(hostname) || hostname === '::' || /^(?:fc|fd|fe[89ab])/i.test(hostname))) return false
+        return true
+    } catch (err) {
+        return false
+    }
+}
+
+async function openExternalSafe(value) {
+    const target = String(value || '').trim()
+    if (!isSafeExternalUrl(target)) throw new Error('El enlace externo fue bloqueado por seguridad.')
+    await shell.openExternal(target)
+}
+
+function summarizeError(error, maxLength = 320) {
+    return String(error?.message || error || 'Error desconocido').split(/\r?\n/, 1)[0].slice(0, maxLength)
+}
 
 function handleDeepLink(rawUrl) {
     const value = String(rawUrl || '').trim()
@@ -89,8 +132,32 @@ function handleDeepLink(rawUrl) {
     } catch (err) {}
 }
 
-const gotSingleInstanceLock = app.requestSingleInstanceLock()
+log(`Iniciando Obsidian Studios Launcher ${app.getVersion()} (${app.isPackaged ? 'empaquetado' : 'desarrollo'}).`)
+for (const stream of [process.stdout, process.stderr]) {
+    if (app.isPackaged && typeof stream?.write === 'function') {
+        const nativeWrite = stream.write.bind(stream)
+        stream.write = (...args) => {
+            try {
+                return nativeWrite(...args)
+            } catch (err) {
+                if (err?.code === 'EPIPE') return false
+                throw err
+            }
+        }
+    }
+    stream?.on?.('error', (err) => {
+        if (err?.code !== 'EPIPE') log(`Flujo de salida: ${summarizeError(err)}`)
+    })
+}
+if (app.isPackaged) {
+    for (const method of ['log', 'info', 'debug']) console[method] = () => {}
+    for (const method of ['warn', 'error']) {
+        console[method] = (...values) => log(values.map((value) => value?.stack || value?.message || String(value)).join(' '))
+    }
+}
+const gotSingleInstanceLock = process.defaultApp || app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
+    log('Otra instancia del launcher ya esta activa; se reutilizara la ventana existente.')
     app.quit()
 } else {
     app.on('second-instance', (event, argv) => {
@@ -125,10 +192,29 @@ function createWindow() {
         frame: false,
         icon: path.join(__dirname, 'icono.ico'),
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false
         }
     })
+
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        openExternalSafe(url).catch((err) => log(err.message))
+        return { action: 'deny' }
+    })
+    win.webContents.on('will-navigate', (event, url) => {
+        if (url !== win.webContents.getURL()) {
+            event.preventDefault()
+            openExternalSafe(url).catch((err) => log(err.message))
+        }
+    })
+    win.webContents.on('render-process-gone', (event, details) => {
+        log(`El proceso visual termino inesperadamente (${details.reason || 'desconocido'}, codigo ${details.exitCode ?? 'n/a'}).`)
+    })
+    win.on('unresponsive', () => log('La ventana del launcher dejo de responder temporalmente.'))
 
     const youtubeFilter = { urls: ['*://*.youtube.com/*', '*://*.youtube-nocookie.com/*'] }
     win.webContents.session.webRequest.onBeforeSendHeaders(youtubeFilter, (details, callback) => {
@@ -154,7 +240,10 @@ function createWindow() {
     })
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+    configureAutoUpdater()
+    createWindow()
+})
 
 app.on('before-quit', () => {
     finishPlaytimeSession()
@@ -181,13 +270,36 @@ ipcMain.on('toggle-maximize-app', () => {
     else win.maximize()
 })
 
+ipcMain.on('renderer-error', (event, value) => {
+    const message = String(value || '').slice(0, 4000)
+    if (message) log(`Interfaz: ${message}`)
+})
+
 function sendToRenderer(channel, payload) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
 }
 
 function log(msg) {
-    sendToRenderer('log', msg)
+    const safeMessage = redactSensitive(msg)
+    sendToRenderer('log', safeMessage)
+    try {
+        fs.mkdirSync(DATA_DIR, { recursive: true })
+        if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size >= MAX_LOG_BYTES) {
+            const previous = LOG_FILE + '.1'
+            try { fs.rmSync(previous, { force: true }) } catch (err) {}
+            fs.renameSync(LOG_FILE, previous)
+        }
+        fs.appendFile(LOG_FILE, `[${new Date().toISOString()}] ${safeMessage}\n`, () => {})
+    } catch (err) {}
 }
+
+process.on('unhandledRejection', (reason) => {
+    log(`Promesa no controlada: ${reason?.stack || reason?.message || String(reason)}`)
+})
+
+process.on('uncaughtExceptionMonitor', (err) => {
+    log(`Error no controlado: ${err?.stack || err?.message || String(err)}`)
+})
 
 function setProgress(percent) {
     const safe = Math.max(0, Math.min(100, Math.round(percent)))
@@ -333,36 +445,161 @@ function normalizeLauncherUpdate(data, { silent = false } = {}) {
         latest_version: String(latestVersion).replace(/^v/i, '').trim(),
         current_version: app.getVersion(),
         download_url: normalizedUrl,
+        provider: String(source.provider || 'legacy-manifest'),
         required: source.required === true || source.force === true || source.mandatory === true,
         changelog: Array.isArray(source.changelog)
             ? source.changelog.map(String).filter(Boolean)
             : String(source.changelog || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
         sha256: String(source.sha256 || source.hash || source.checksum || '').trim(),
-        installer_args: Array.isArray(source.installer_args) ? source.installer_args.map(String) : ['/S']
+        installer_args: ['/S']
     }
 }
 
-async function checkLauncherUpdates({ manual = false } = {}) {
-    try {
-        const separator = LAUNCHER_UPDATE_URL.includes('?') ? '&' : '?'
-        const response = await axios.get(`${LAUNCHER_UPDATE_URL}${separator}_=${Date.now()}`, {
-            timeout: 15000,
-            headers: { 'Cache-Control': 'no-cache' }
+function releaseNotesToChangelog(value) {
+    return String(value || '')
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^\s*(?:[-*+]\s+|#{1,6}\s*)/, '').trim())
+        .filter((line) => line && !/^https?:\/\//i.test(line))
+        .slice(0, 16)
+}
+
+function normalizeGitHubRelease(release) {
+    if (!release || release.draft || release.prerelease) return null
+    const asset = Array.isArray(release.assets)
+        ? release.assets.find((item) => item?.state === 'uploaded' && /\.exe$/i.test(item.name || '') && !/uninstaller/i.test(item.name || ''))
+        : null
+    const digest = String(asset?.digest || '')
+    const sha256 = digest.toLowerCase().startsWith('sha256:') ? digest.slice(7).trim() : ''
+    if (!asset?.browser_download_url || !sha256) return null
+
+    return {
+        latest_version: String(release.tag_name || release.name || '').replace(/^v/i, '').trim(),
+        current_version: app.getVersion(),
+        download_url: String(asset.browser_download_url),
+        provider: 'github-release',
+        required: false,
+        changelog: releaseNotesToChangelog(release.body),
+        sha256,
+        installer_args: ['/S']
+    }
+}
+
+async function fetchGitHubReleaseUpdate() {
+    const response = await axios.get(GITHUB_RELEASES_API_URL, {
+        timeout: 15000,
+        headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': `ObsidianLauncher/${app.getVersion()}`,
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+    })
+    const update = normalizeGitHubRelease(response.data)
+    if (!update) throw new Error('La release mas reciente no incluye un instalador EXE con digest SHA-256 verificable.')
+    return update
+}
+
+async function fetchLegacyLauncherUpdate() {
+    const separator = LAUNCHER_UPDATE_URL.includes('?') ? '&' : '?'
+    const response = await axios.get(`${LAUNCHER_UPDATE_URL}${separator}_=${Date.now()}`, {
+        timeout: 15000,
+        headers: { 'Cache-Control': 'no-cache' }
+    })
+    return normalizeLauncherUpdate(response.data, { silent: true })
+}
+
+function autoUpdaterPayload(info = {}) {
+    const releaseNotes = Array.isArray(info.releaseNotes)
+        ? info.releaseNotes.map((item) => item?.note || item).filter(Boolean)
+        : releaseNotesToChangelog(info.releaseNotes)
+    return {
+        latest_version: String(info.version || '').replace(/^v/i, ''),
+        current_version: app.getVersion(),
+        download_url: 'electron-updater://download',
+        provider: 'electron-updater',
+        required: false,
+        changelog: releaseNotes
+    }
+}
+
+function configureAutoUpdater() {
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.allowPrerelease = false
+    autoUpdater.allowDowngrade = false
+    autoUpdater.disableWebInstaller = true
+    autoUpdater.on('update-available', (info) => {
+        activeLauncherUpdate = autoUpdaterPayload(info)
+        launcherUpdateReady = false
+        log(`Nueva version del launcher disponible: ${activeLauncherUpdate.current_version} -> ${activeLauncherUpdate.latest_version}.`)
+        sendToRenderer('launcher-update-available', activeLauncherUpdate)
+    })
+    autoUpdater.on('update-not-available', () => {
+        if (launcherUpdateCheckManual) {
+            const current = { current_version: app.getVersion(), latest_version: app.getVersion(), provider: 'electron-updater' }
+            log(`El launcher ya esta actualizado: v${app.getVersion()}.`)
+            sendToRenderer('launcher-update-current', current)
+        }
+    })
+    autoUpdater.on('download-progress', (progress = {}) => {
+        sendToRenderer('launcher-update-download-progress', {
+            percent: Number(progress.percent || 0),
+            downloaded: Number(progress.transferred || 0),
+            total: Number(progress.total || 0),
+            speed: Number(progress.bytesPerSecond || 0)
         })
-        const update = normalizeLauncherUpdate(response.data)
+    })
+    autoUpdater.on('update-downloaded', (info) => {
+        launcherUpdateReady = true
+        activeLauncherUpdate = { ...(activeLauncherUpdate || autoUpdaterPayload(info)), ready_to_install: true }
+        log(`Actualizacion v${info?.version || activeLauncherUpdate.latest_version} descargada y verificada.`)
+        sendToRenderer('launcher-update-downloaded', activeLauncherUpdate)
+    })
+    autoUpdater.on('error', (err) => {
+        const message = summarizeError(err)
+        log(`Updater integrado: ${message}`)
+        if (launcherUpdateInProgress) sendToRenderer('launcher-update-error', { message })
+    })
+}
+
+async function checkLauncherUpdates({ manual = false } = {}) {
+    launcherUpdateCheckManual = manual
+    if (app.isPackaged) {
+        try {
+            await autoUpdater.checkForUpdates()
+            return
+        } catch (err) {
+            log(`Updater integrado no disponible; usando comprobacion segura por GitHub: ${summarizeError(err)}`)
+        } finally {
+            launcherUpdateCheckManual = false
+        }
+    }
+
+    try {
+        let update
+        try {
+            update = await fetchGitHubReleaseUpdate()
+        } catch (githubError) {
+            log(`GitHub Releases no respondio con una actualizacion verificable: ${summarizeError(githubError)}`)
+            update = await fetchLegacyLauncherUpdate()
+        }
         if (!update) {
             if (manual) log('No se pudo leer la informacion de actualizacion del launcher.')
             return
         }
         if (isNewerVersion(update.latest_version, update.current_version)) {
+            activeLauncherUpdate = update
+            launcherUpdateReady = false
             log(`Nueva version del launcher disponible: ${update.current_version} -> ${update.latest_version}.`)
             sendToRenderer('launcher-update-available', update)
         } else if (manual) {
+            activeLauncherUpdate = null
             log(`El launcher ya esta actualizado: v${update.current_version}.`)
             sendToRenderer('launcher-update-current', update)
         }
     } catch (err) {
         if (manual) log(`No se pudo comprobar actualizaciones del launcher: ${err.message}`)
+    } finally {
+        launcherUpdateCheckManual = false
     }
 }
 
@@ -395,9 +632,18 @@ async function downloadLauncherUpdateInstaller(update) {
     })
 
     const total = Number(response.headers['content-length'] || 0)
+    const maxUpdateBytes = 500 * 1024 * 1024
+    if (total > maxUpdateBytes) {
+        response.data.destroy()
+        throw new Error('El instalador supera el limite de seguridad de 500 MB.')
+    }
     let downloaded = 0
     response.data.on('data', (chunk) => {
         downloaded += chunk.length
+        if (downloaded > maxUpdateBytes) {
+            response.data.destroy(new Error('La descarga supero el limite de seguridad de 500 MB.'))
+            return
+        }
         const percent = total ? Math.min(99, Math.round((downloaded / total) * 100)) : 0
         sendToRenderer('launcher-update-download-progress', { percent, downloaded, total })
     })
@@ -406,15 +652,17 @@ async function downloadLauncherUpdateInstaller(update) {
     if (!fs.existsSync(partialPath) || fs.statSync(partialPath).size < 1024 * 1024) {
         throw new Error('El instalador descargado parece incompleto.')
     }
+    if (total && downloaded !== total) throw new Error('La descarga termino con un tamano diferente al anunciado por el servidor.')
 
     const expectedHash = String(update.sha256 || '').trim().toLowerCase()
-    if (expectedHash) {
-        const fileBuffer = fs.readFileSync(partialPath)
-        const actualHash = crypto.createHash('sha256').update(fileBuffer).digest('hex')
-        if (actualHash !== expectedHash) {
-            try { fs.unlinkSync(partialPath) } catch (err) {}
-            throw new Error('El SHA256 del instalador no coincide. Descarga bloqueada.')
-        }
+    if (!/^[a-f0-9]{64}$/.test(expectedHash)) {
+        try { fs.unlinkSync(partialPath) } catch (err) {}
+        throw new Error('La actualizacion no publica un SHA-256 valido. Descarga bloqueada.')
+    }
+    const actualHash = await fileHash(partialPath, 'sha256')
+    if (actualHash !== expectedHash) {
+        try { fs.unlinkSync(partialPath) } catch (err) {}
+        throw new Error('El SHA-256 del instalador no coincide. Descarga bloqueada.')
     }
 
     try { if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath) } catch (err) {}
@@ -441,9 +689,44 @@ function runLauncherUpdateInstaller(installerPath, update = {}) {
         app.quit()
     }, 900)
 }
+function writeFileAtomic(file, contents) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const temporaryFile = `${file}.${process.pid}.${Date.now()}.tmp`
+    fs.writeFileSync(temporaryFile, contents, { encoding: 'utf8', mode: 0o600 })
+    try {
+        fs.renameSync(temporaryFile, file)
+    } catch (err) {
+        if (process.platform === 'win32' && fs.existsSync(file)) {
+            fs.rmSync(file, { force: true })
+            fs.renameSync(temporaryFile, file)
+        } else {
+            try { fs.rmSync(temporaryFile, { force: true }) } catch (cleanupError) {}
+            throw err
+        }
+    }
+}
+
 function saveJson(file, data) {
+    writeFileAtomic(file, JSON.stringify(data, null, 2))
+}
+
+function saveSecureJson(file, data) {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8')
+    if (!safeStorage.isEncryptionAvailable()) {
+        log(`Almacenamiento seguro no disponible; ${path.basename(file)} no se guardo en disco.`)
+        return false
+    }
+    const encrypted = safeStorage.encryptString(JSON.stringify(data)).toString('base64')
+    writeFileAtomic(file, JSON.stringify({ secure: true, version: 1, data: encrypted }, null, 2))
+    return true
+}
+
+function readSecureJson(file) {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!parsed?.secure) return parsed
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('El almacenamiento seguro de Windows no esta disponible.')
+    const decrypted = safeStorage.decryptString(Buffer.from(String(parsed.data || ''), 'base64'))
+    return JSON.parse(decrypted)
 }
 
 function readPlaytime() {
@@ -493,6 +776,9 @@ function redactSensitive(value) {
     return String(value || '')
         .replace(/(--accessToken\s+)(\S+)/g, '$1[redacted]')
         .replace(/(access_token["']?\s*[:=]\s*["']?)([^"',\s]+)/gi, '$1[redacted]')
+        .replace(/(refresh_token["']?\s*[:=]\s*["']?)([^"',\s]+)/gi, '$1[redacted]')
+        .replace(/(authorization:\s*bearer\s+)(\S+)/gi, '$1[redacted]')
+        .replace(/(client_secret["']?\s*[:=]\s*["']?)([^"',\s]+)/gi, '$1[redacted]')
 }
 
 function readDirEntries(dirPath) {
@@ -501,6 +787,42 @@ function readDirEntries(dirPath) {
     } catch (e) {
         return []
     }
+}
+
+function validateZipArchive(zip, options = {}) {
+    const entries = zip.getEntries()
+    const maxEntries = Number(options.maxEntries || 50000)
+    const maxSingleBytes = Number(options.maxSingleBytes || 2 * 1024 * 1024 * 1024)
+    const maxTotalBytes = Number(options.maxTotalBytes || 12 * 1024 * 1024 * 1024)
+    if (entries.length > maxEntries) throw new Error(`El paquete contiene demasiados archivos (${entries.length}).`)
+
+    const names = new Set()
+    let totalBytes = 0
+    for (const entry of entries) {
+        const normalized = String(entry.entryName || '').replace(/\\/g, '/')
+        const segments = normalized.split('/').filter(Boolean)
+        if (!normalized || normalized.startsWith('/') || /^[a-z]:/i.test(normalized) || segments.includes('..')) {
+            throw new Error(`El paquete contiene una ruta insegura: ${entry.entryName}`)
+        }
+        const unixType = (Number(entry.attr || 0) >>> 16) & 0xf000
+        if (unixType === 0xa000) throw new Error(`El paquete contiene un enlace simbolico no permitido: ${entry.entryName}`)
+
+        const key = normalized.toLowerCase().replace(/\/$/, '')
+        if (!entry.isDirectory && names.has(key)) throw new Error(`El paquete contiene una entrada duplicada: ${entry.entryName}`)
+        if (!entry.isDirectory) names.add(key)
+
+        const size = Number(entry.header?.size || 0)
+        if (!Number.isSafeInteger(size) || size < 0 || size > maxSingleBytes) {
+            throw new Error(`El archivo ${entry.entryName} supera el limite permitido.`)
+        }
+        totalBytes += size
+        if (totalBytes > maxTotalBytes) throw new Error('El contenido descomprimido del paquete supera el limite de seguridad.')
+    }
+    return zip
+}
+
+function openValidatedZip(source, options = {}) {
+    return validateZipArchive(new AdmZip(source), options)
 }
 
 function getForgeVersionParts(mcVersion, loaderVersion) {
@@ -576,7 +898,7 @@ function readJsonIfExists(filePath) {
 function isReadableJar(filePath) {
     try {
         if (!fs.existsSync(filePath)) return true
-        const zip = new AdmZip(filePath)
+        const zip = openValidatedZip(filePath, { maxEntries: 100000, maxSingleBytes: 512 * 1024 * 1024, maxTotalBytes: 2 * 1024 * 1024 * 1024 })
         zip.getEntries()
         return true
     } catch (err) {
@@ -841,7 +1163,7 @@ async function ensureManagedJava(required, progressStart = 8, progressEnd = 35) 
     })
 
     log(`Extrayendo Java ${required} portable...`)
-    await extractZip(zipPath, { dir: javaRoot })
+    await openValidatedZip(zipPath).extractAllToAsync(javaRoot, true, false)
     try { fs.unlinkSync(zipPath) } catch (e) {}
 
     const javaExe = getManagedJavaPath(required)
@@ -916,7 +1238,7 @@ function tryAutoLogin() {
 
     try {
         log('Restaurando sesion previa de Discord...')
-        const sessionData = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'))
+        const sessionData = readSecureJson(SESSION_FILE)
         if (sessionData && sessionData.accessToken) {
             discordUser = sessionData
             setTimeout(() => {
@@ -934,7 +1256,7 @@ function tryAutoLogin() {
 function loadMinecraftProfile() {
     try {
         if (fs.existsSync(MINECRAFT_PROFILE_FILE)) {
-            minecraftProfile = JSON.parse(fs.readFileSync(MINECRAFT_PROFILE_FILE, 'utf8'))
+            minecraftProfile = readSecureJson(MINECRAFT_PROFILE_FILE)
         } else {
             minecraftProfile = {
                 mode: 'offline',
@@ -954,7 +1276,7 @@ function loadMinecraftProfile() {
         }
     }
 
-    saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+    saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
     sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
 }
 
@@ -985,7 +1307,7 @@ function loadSkinLibrary() {
 
 function saveSkinLibrary(items) {
     fs.mkdirSync(PROFILE_SKINS_DIR, { recursive: true })
-    fs.writeFileSync(SKIN_LIBRARY_FILE, JSON.stringify(items, null, 2), 'utf8')
+    writeFileAtomic(SKIN_LIBRARY_FILE, JSON.stringify(items, null, 2))
 }
 
 function registerSkinInLibrary(source, fileData, variant, displayName = '') {
@@ -1079,7 +1401,7 @@ function saveMicrosoftProfile(minecraftToken, refreshToken) {
         microsoftRefreshToken: refreshToken || auth.meta?.refresh || minecraftProfile?.microsoftRefreshToken || ''
     }
 
-    saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+    saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
     sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     log(`Microsoft vinculado: ${minecraftProfile.username}`)
 }
@@ -1117,7 +1439,7 @@ function applyMinecraftServicesProfile(profile) {
         skinPath: '',
         premiumReady: true
     }
-    saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+    saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
     sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
 }
 
@@ -1203,7 +1525,7 @@ async function activateSkinLibraryItem(item, requestedVariant = item?.variant) {
         await uploadMinecraftSkin(item.filePath, variant)
         minecraftProfile.activeSkinLibraryId = item.id
         minecraftProfile.activeDefaultSkinId = ''
-        saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+        saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
         sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     } else {
         minecraftProfile = {
@@ -1214,7 +1536,7 @@ async function activateSkinLibraryItem(item, requestedVariant = item?.variant) {
             activeSkinLibraryId: item.id,
             activeDefaultSkinId: ''
         }
-        saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+        saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
         sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     }
     return getSafeMinecraftProfile()
@@ -1230,7 +1552,7 @@ async function activateDefaultSkinItem(item) {
         await uploadMinecraftSkin(item.filePath, variant)
         minecraftProfile.activeDefaultSkinId = item.id
         minecraftProfile.activeSkinLibraryId = ''
-        saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+        saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
         sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     } else {
         minecraftProfile = {
@@ -1242,7 +1564,7 @@ async function activateDefaultSkinItem(item) {
             activeDefaultSkinId: item.id,
             activeSkinLibraryId: ''
         }
-        saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+        saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
         sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     }
     return getSafeMinecraftProfile()
@@ -1299,55 +1621,90 @@ function slugify(value, fallback) {
         .replace(/^-|-$/g, '')
 }
 
-function normalizeProject(project, index = 0) {
+function sanitizeProjectId(value, fallback) {
+    const safe = String(value || fallback || '')
+        .trim()
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^\.+/, '')
+        .replace(/-+/g, '-')
+        .slice(0, 80)
+    return safe || slugify(fallback, 'proyecto')
+}
+
+function sanitizeCatalogUrl(value) {
+    const candidate = String(value || '').trim()
+    return isSafeExternalUrl(candidate) ? candidate : ''
+}
+
+function sanitizeManagedPath(value, root) {
+    const candidate = String(value || '').trim()
+    if (!candidate) return ''
+    const resolved = path.resolve(candidate)
+    const relative = path.relative(path.resolve(root), resolved)
+    return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? resolved : ''
+}
+
+function normalizeProject(project, index = 0, { trustedLocal = false } = {}) {
     if (!project || typeof project !== 'object') return null
     if (project.hidden === true || project.enabled === false || project.active === false) return null
 
-    const name = project.name || `Proyecto ${index + 1}`
-    const loader = String(project.loader || '').toLowerCase()
+    const name = String(project.name || `Proyecto ${index + 1}`).trim().slice(0, 120)
+    const requestedLoader = String(project.loader || '').toLowerCase()
+    const loader = ['vanilla', 'fabric', 'forge', 'neoforge'].includes(requestedLoader) ? requestedLoader : ''
     const loaderVersion = project.loader_version ||
         project.fabric_version ||
         project.forge_version ||
         project.neoforge_version ||
         project.loaderVersion ||
         ''
+    const isLocal = trustedLocal && Boolean(project.local || project.is_local || project.source === 'local')
+    const localImagePath = isLocal ? sanitizeManagedPath(project.local_image_path || project.localImagePath, LOCAL_IMAGES_DIR) : ''
+    const fileInfo = project.file && typeof project.file === 'object' ? project.file : {}
+    const accessInfo = project.access && typeof project.access === 'object' ? project.access : {}
+    const imageCandidate = project.bg_image || project.image || localImagePath || ''
+    const expectedSize = Number(project.file_size || fileInfo.size || 0)
+    const expectedSha256 = String(project.file_sha256 || fileInfo.sha256 || '').trim().toLowerCase()
 
     const normalized = {
-        id: project.id || slugify(name, `proyecto-${index + 1}`),
+        id: sanitizeProjectId(project.id, slugify(name, `proyecto-${index + 1}`)),
         name,
-        description: project.description || 'Sin descripcion disponible.',
-        codigo_acceso: project.codigo_acceso || project.access_code || '',
-        discord_guild_id: project.discord_guild_id || project.guild_id || DISCORD_GUILD_ID,
-        discord_role_id: project.discord_role_id || '',
-        bg_image: project.bg_image || project.image || project.local_image_path || '',
-        announcement_image: project.announcement_image || project.news_image || project.bg_image || project.image || '',
-        modpack_url: project.modpack_url || project.url || '',
-        trailer_url: project.trailer_url || project.trailer || project.video_url || '',
+        description: String(project.description || 'Sin descripcion disponible.').slice(0, 800),
+        codigo_acceso: trustedLocal ? String(project.codigo_acceso || project.access_code || '').slice(0, 256) : '',
+        access_type: String(accessInfo.type || project.access_type || '').slice(0, 40),
+        discord_guild_id: /^\d{15,22}$/.test(String(project.discord_guild_id || project.guild_id || accessInfo.guild_id || '')) ? String(project.discord_guild_id || project.guild_id || accessInfo.guild_id) : DISCORD_GUILD_ID,
+        discord_role_id: /^\d{15,22}$/.test(String(project.discord_role_id || accessInfo.role_id || '')) ? String(project.discord_role_id || accessInfo.role_id) : '',
+        bg_image: isLocal && localImagePath && path.resolve(imageCandidate) === localImagePath ? localImagePath : sanitizeCatalogUrl(imageCandidate),
+        announcement_image: sanitizeCatalogUrl(project.announcement_image || project.news_image || project.bg_image || project.image || ''),
+        modpack_url: sanitizeCatalogUrl(project.modpack_url || project.url || fileInfo.url || ''),
+        file_type: String(project.file_type || fileInfo.type || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12),
+        file_size: Number.isSafeInteger(expectedSize) && expectedSize > 0 ? expectedSize : 0,
+        file_sha256: /^[a-f0-9]{64}$/.test(expectedSha256) ? expectedSha256 : '',
+        trailer_url: sanitizeCatalogUrl(project.trailer_url || project.trailer || project.video_url || ''),
         featured: Boolean(project.featured || project.destacado || project.highlighted),
         maintenance: Boolean(project.maintenance || project.mantenimiento || project.disabled || project.no_disponible),
         maintenance_message: project.maintenance_message || project.maintenanceMessage || project.message || project.aviso || '',
         status: project.status || project.estado || '',
         changelog: Array.isArray(project.changelog)
-            ? project.changelog.map(String).filter(Boolean)
-            : String(project.changelog || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-        project_version: project.project_version ||
+            ? project.changelog.map((item) => String(item).slice(0, 300)).filter(Boolean).slice(0, 40)
+            : String(project.changelog || '').split(/\r?\n/).map((item) => item.trim().slice(0, 300)).filter(Boolean).slice(0, 40),
+        project_version: String(project.project_version ||
             project.instance_version ||
             project.pack_version ||
             project.modpack_version ||
-            '1.0.0',
-        minecraft_version: project.local && !project.minecraft_version && !project.version ? '' : (project.minecraft_version || project.version || '1.21.1'),
-        loader: loader || (project.local ? '' : (project.neoforge_version ? 'neoforge' : project.forge_version ? 'forge' : 'fabric')),
-        loader_version: loaderVersion,
+            '1.0.0').slice(0, 64),
+        minecraft_version: isLocal && !project.minecraft_version && !project.version ? '' : String(project.minecraft_version || project.version || '1.21.1').slice(0, 40),
+        loader: loader || (isLocal ? '' : (project.neoforge_version ? 'neoforge' : project.forge_version ? 'forge' : 'fabric')),
+        loader_version: String(loaderVersion).slice(0, 80),
         loader_profile_id: project.loader_profile_id || project.profile_id || '',
         fabric_version: project.fabric_version || (loader === 'fabric' ? loaderVersion : ''),
         java_version: project.java_version || project.java_major || project.required_java || project.java || '',
-        java_path: project.java_path || project.javaPath || '',
+        java_path: isLocal ? String(project.java_path || project.javaPath || '') : '',
         source: project.source || project.origin || '',
-        local: Boolean(project.local || project.is_local || project.source === 'local'),
-        local_pack_path: project.local_pack_path || project.localPackPath || '',
-        original_pack_path: project.original_pack_path || project.originalPackPath || '',
+        local: isLocal,
+        local_pack_path: isLocal ? sanitizeManagedPath(project.local_pack_path || project.localPackPath, LOCAL_PACKS_DIR) : '',
+        original_pack_path: isLocal ? String(project.original_pack_path || project.originalPackPath || '') : '',
         local_pack_type: project.local_pack_type || project.localPackType || '',
-        local_image_path: project.local_image_path || project.localImagePath || '',
+        local_image_path: localImagePath,
         requires_curseforge_api: Boolean(project.requires_curseforge_api || project.requiresCurseForgeApi),
         imported_at: project.imported_at || ''
     }
@@ -1421,7 +1778,7 @@ async function validateDiscordRole(project) {
     }
 }
 
-function normalizeProjectList(rawProjects) {
+function normalizeProjectList(rawProjects, options = {}) {
     let catalogMeta = null
     let sourceList = rawProjects
 
@@ -1446,7 +1803,7 @@ function normalizeProjectList(rawProjects) {
 
     const list = Array.isArray(sourceList) ? sourceList : [sourceList]
     const normalizedProjects = list.map((project, index) => {
-        const normalized = normalizeProject(project, index)
+        const normalized = normalizeProject(project, index, options)
         if (!normalized || !catalogMeta) return normalized
         return {
             ...normalized,
@@ -1478,10 +1835,69 @@ function normalizeProjectList(rawProjects) {
     })
 }
 
+function normalizeNewsList(rawNews) {
+    const now = Date.now()
+    const allowedActions = new Set(['project', 'tab', 'versions', 'external'])
+    const usedIds = new Set()
+    return (Array.isArray(rawNews) ? rawNews : []).map((item, index) => {
+        if (!item || typeof item !== 'object') return null
+        const status = String(item.status || 'published').toLowerCase()
+        const publishAt = Date.parse(item.publish_at || item.date || '')
+        const expiresAt = item.expires_at ? Date.parse(item.expires_at) : NaN
+        if (status !== 'published' || (Number.isFinite(publishAt) && publishAt > now) || (Number.isFinite(expiresAt) && expiresAt <= now)) return null
+        const id = sanitizeProjectId(item.id, `noticia-${index + 1}`)
+        if (usedIds.has(id)) return null
+        usedIds.add(id)
+        const rawAction = item.action && typeof item.action === 'object' ? item.action : null
+        const actionType = rawAction && allowedActions.has(String(rawAction.type || '').toLowerCase()) ? String(rawAction.type).toLowerCase() : ''
+        const externalUrl = actionType === 'external' ? sanitizeCatalogUrl(rawAction.value || item.external_url || '') : ''
+        const action = actionType && (actionType !== 'external' || externalUrl) ? {
+            type: actionType,
+            value: actionType === 'external' ? externalUrl : String(rawAction.value || '').slice(0, 160),
+            label: String(rawAction.label || 'Abrir').slice(0, 80)
+        } : null
+        const date = Number.isFinite(publishAt) ? new Date(publishAt).toISOString() : new Date().toISOString()
+        return {
+            id,
+            date,
+            label: String(item.label || item.type || 'Noticia').slice(0, 40),
+            type: String(item.type || 'news').slice(0, 40),
+            title: String(item.title || 'Noticia de Obsidian Studios').slice(0, 160),
+            summary: String(item.summary || item.excerpt || '').slice(0, 500),
+            body: String(item.content || item.body || item.summary || '').slice(0, 8000),
+            image: sanitizeCatalogUrl(item.image || '') || (String(item.image || '').startsWith('../') ? String(item.image).slice(0, 200) : ''),
+            featured: Boolean(item.featured),
+            priority: Math.max(-1000, Math.min(1000, Number(item.priority) || 0)),
+            project_id: item.project_id ? sanitizeProjectId(item.project_id, 'proyecto') : '',
+            version: String(item.version || '').slice(0, 64),
+            tags: Array.isArray(item.tags) ? item.tags.map((tag) => String(tag).slice(0, 40)).filter(Boolean).slice(0, 12) : [],
+            action
+        }
+    }).filter(Boolean).sort((a, b) => Number(b.featured) - Number(a.featured) || b.priority - a.priority || Date.parse(b.date) - Date.parse(a.date))
+}
+
+function normalizeContentDocument(rawDocument, options = {}) {
+    if (!rawDocument || typeof rawDocument !== 'object') throw new Error('El documento de contenido no es valido.')
+    const projects = normalizeProjectList(rawDocument, options)
+    const news = normalizeNewsList(rawDocument.news)
+    const catalog = rawDocument.catalog && typeof rawDocument.catalog === 'object' ? rawDocument.catalog : rawDocument
+    remoteCatalogMessage = {
+        maintenance: Boolean(catalog.maintenance || catalog.mantenimiento),
+        message: String(catalog.message || catalog.aviso || catalog.notice || '').slice(0, 600),
+        title: String(catalog.title || catalog.titulo || '').slice(0, 120)
+    }
+    return { projects, news }
+}
+
+function readContentFile(filePath) {
+    if (!fs.existsSync(filePath)) throw new Error(`No existe ${path.basename(filePath)}.`)
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'))
+}
+
 function readLocalInstances() {
     try {
         if (!fs.existsSync(LOCAL_INSTANCES_FILE)) return []
-        return normalizeProjectList(JSON.parse(fs.readFileSync(LOCAL_INSTANCES_FILE, 'utf8')))
+        return normalizeProjectList(JSON.parse(fs.readFileSync(LOCAL_INSTANCES_FILE, 'utf8')), { trustedLocal: true })
             .map((project) => ({ ...project, source: 'local', local: true }))
     } catch (err) {
         log(`Error leyendo instancias locales: ${err.message}`)
@@ -1492,12 +1908,14 @@ function readLocalInstances() {
 function saveLocalInstances(list) {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
     const safeList = Array.isArray(list) ? list : []
-    fs.writeFileSync(LOCAL_INSTANCES_FILE, JSON.stringify(safeList, null, 2), 'utf8')
+    writeFileAtomic(LOCAL_INSTANCES_FILE, JSON.stringify(safeList, null, 2))
 }
 
 function refreshCombinedCatalog() {
     cachedServerList = [...remoteServerList, ...localServerList]
     sendToRenderer('catalog-message', remoteCatalogMessage)
+    sendToRenderer('content-news', remoteNewsList)
+    sendToRenderer('content-status', { source: contentSource, projects: remoteServerList.length, news: remoteNewsList.length })
     sendToRenderer('all-servers-info', cachedServerList.map((project) => ({ ...project, ...getInstanceState(project) })))
     sendToRenderer('local-instances-info', localServerList.map((project) => ({ ...project, ...getInstanceState(project) })))
     sendPlaytimeStats()
@@ -1578,7 +1996,7 @@ function storeLocalPackImage(zipPath, id, entryName) {
     if (!entryName) return ''
     try {
         if (!fs.existsSync(LOCAL_IMAGES_DIR)) fs.mkdirSync(LOCAL_IMAGES_DIR, { recursive: true })
-        const zip = new AdmZip(zipPath)
+        const zip = openValidatedZip(zipPath)
         const entry = findEntryByName(zip, entryName)
         if (!entry) return ''
         const ext = path.extname(entry.entryName).toLowerCase() || '.png'
@@ -1618,7 +2036,7 @@ function detectLoaderFromJarData(buffer, fileName = '') {
     const lowerName = String(fileName || '').toLowerCase()
     const fromName = extractMinecraftVersionFromText(lowerName)
     try {
-        const jar = new AdmZip(buffer)
+        const jar = openValidatedZip(buffer, { maxEntries: 100000, maxSingleBytes: 512 * 1024 * 1024, maxTotalBytes: 2 * 1024 * 1024 * 1024 })
         const fabricEntry = jar.getEntry('fabric.mod.json')
         if (fabricEntry) {
             try {
@@ -1643,7 +2061,7 @@ function detectLoaderFromJarData(buffer, fileName = '') {
 }
 
 function detectZipPackInfo(zipPath, project = {}) {
-    const zip = new AdmZip(zipPath)
+    const zip = openValidatedZip(zipPath)
     const prefix = findZipContentRoot(zip)
     const curse = detectFromCurseForgeManifest(zip, project)
     if (curse) return curse
@@ -1676,7 +2094,8 @@ async function copyZipPackContents(zipPath, gamePath) {
     let copied = 0
     let sourceRoot = tempRoot
     try {
-        await extractZip(zipPath, { dir: tempRoot })
+        const archive = openValidatedZip(zipPath)
+        await archive.extractAllToAsync(tempRoot, true, false)
         const topLevel = readDirEntries(tempRoot).filter((entry) => entry.name !== '__MACOSX')
         if (topLevel.length === 1 && topLevel[0].isDirectory()) {
             const candidate = path.join(tempRoot, topLevel[0].name)
@@ -1715,7 +2134,7 @@ function readFabricModsFromGame(gamePath) {
         if (!entry.isFile() || !/.jar$/i.test(entry.name)) continue
         const jarPath = path.join(modsDir, entry.name)
         try {
-            const jar = new AdmZip(jarPath)
+            const jar = openValidatedZip(jarPath, { maxEntries: 100000, maxSingleBytes: 512 * 1024 * 1024, maxTotalBytes: 2 * 1024 * 1024 * 1024 })
             const fabricEntry = jar.getEntry('fabric.mod.json')
             if (!fabricEntry) continue
             const fabric = JSON.parse(fabricEntry.getData().toString('utf8'))
@@ -1808,7 +2227,7 @@ function createLocalProjectFromFile(filePath, options = {}) {
         requires_curseforge_api: Boolean(detected.requiresCurseForgeApi),
         imported_at: new Date().toISOString(),
         status: detected.requiresCurseForgeApi ? 'needs_curseforge_api' : ((!options.minecraft_version && !detected.minecraftVersion) || (!loader && !detected.loader) || (loader && loader !== 'vanilla' && !options.loader_version && !detected.loaderVersion) ? 'needs_config' : '')
-    })
+    }, 0, { trustedLocal: true })
 }
 
 
@@ -1832,7 +2251,7 @@ function createEmptyLocalProject(options = {}) {
         local_pack_type: 'created',
         imported_at: new Date().toISOString(),
         status: (!minecraftVersion || (!loader && loader !== 'vanilla') || (loader && loader !== 'vanilla' && !loaderVersion)) ? 'needs_config' : ''
-    })
+    }, 0, { trustedLocal: true })
     const gamePath = path.join(getInstanceBasePath(project), 'game')
     for (const folder of ['mods', 'config', 'resourcepacks', 'shaderpacks', 'saves', 'screenshots']) {
         fs.mkdirSync(path.join(gamePath, folder), { recursive: true })
@@ -1847,7 +2266,8 @@ function readLocalConfig() {
 }
 
 function getInstanceBasePath(project) {
-    return path.join(DATA_DIR, 'instancias', project.id)
+    const instancesRoot = path.join(DATA_DIR, 'instancias')
+    return safeJoin(instancesRoot, sanitizeProjectId(project?.id, 'proyecto'))
 }
 
 function getInstanceManifestPath(project) {
@@ -1941,7 +2361,7 @@ function getLaunchAssetIndexName(project, loaderLaunchInfo) {
 function saveInstanceManifest(project) {
     const manifestPath = getInstanceManifestPath(project)
     fs.mkdirSync(path.dirname(manifestPath), { recursive: true })
-    fs.writeFileSync(manifestPath, JSON.stringify({
+    writeFileAtomic(manifestPath, JSON.stringify({
         id: project.id,
         name: project.name,
         project_version: project.project_version || '1.0.0',
@@ -1954,22 +2374,22 @@ function saveInstanceManifest(project) {
         local_pack_path: project.local_pack_path || '',
         local_pack_type: project.local_pack_type || '',
         installed_at: new Date().toISOString()
-    }, null, 2), 'utf8')
+    }, null, 2))
 }
 
-function getFreshConfigUrl() {
-    const separator = CONFIG_URL.includes('?') ? '&' : '?'
-    return `${CONFIG_URL}${separator}_=${Date.now()}`
+function getFreshConfigUrl(baseUrl = CONTENT_URL) {
+    const separator = baseUrl.includes('?') ? '&' : '?'
+    return `${baseUrl}${separator}_=${Date.now()}`
 }
 
 function cleanDownloadUrl(url) {
     let cleanUrl = String(url || '').replace(/[\r\n\t]/g, '').trim()
     cleanUrl = cleanUrl.replace('www.dropbox.com', 'dl.dropboxusercontent.com')
 
-    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    if (!cleanUrl.startsWith('https://')) {
         cleanUrl = `https://${cleanUrl}`
     }
-
+    if (!isSafeExternalUrl(cleanUrl)) throw new Error('La URL de descarga fue bloqueada por seguridad.')
     return cleanUrl
 }
 
@@ -1998,11 +2418,25 @@ function fileHash(filePath, algorithm) {
 }
 
 async function verifyHashIfPresent(filePath, hashes = {}) {
-    const algorithm = hashes.sha512 ? 'sha512' : hashes.sha1 ? 'sha1' : null
+    const algorithm = hashes.sha512 ? 'sha512' : hashes.sha256 ? 'sha256' : hashes.sha1 ? 'sha1' : null
     if (!algorithm) return true
 
     const actual = await fileHash(filePath, algorithm)
-    return actual === hashes[algorithm]
+    return actual.toLowerCase() === String(hashes[algorithm]).toLowerCase()
+}
+
+async function verifyProjectPackage(filePath, project) {
+    if (!project || project.local) return true
+    const expectedSize = Number(project.file_size || 0)
+    if (expectedSize && fs.statSync(filePath).size !== expectedSize) {
+        throw new Error(`El paquete de ${project.name} no coincide con el tamano publicado.`)
+    }
+    if (project.file_sha256) {
+        const valid = await verifyHashIfPresent(filePath, { sha256: project.file_sha256 })
+        if (!valid) throw new Error(`La verificacion SHA-256 del paquete de ${project.name} fallo. El archivo fue rechazado.`)
+        log(`Integridad SHA-256 verificada para [${project.name}].`)
+    }
+    return true
 }
 
 function getModpackCacheEntry(project, extension = 'zip') {
@@ -2030,7 +2464,7 @@ function getCachedPackageInfo(entry, minSize = 1000) {
 function saveCachedPackageInfo(entry, project, url) {
     try {
         fs.mkdirSync(path.dirname(entry.meta), { recursive: true })
-        fs.writeFileSync(entry.meta, JSON.stringify({ id: entry.id, name: project.name, project_version: project.project_version, url, updatedAt: new Date().toISOString() }, null, 2), 'utf8')
+        writeFileAtomic(entry.meta, JSON.stringify({ id: entry.id, name: project.name, project_version: project.project_version, url, updatedAt: new Date().toISOString() }, null, 2))
     } catch (err) {}
 }
 
@@ -2043,11 +2477,16 @@ async function downloadFile(url, dest, options = {}) {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
 
     try {
+        const maxBytes = Math.max(1024 * 1024, Number(options.maxBytes) || 8 * 1024 * 1024 * 1024)
         const response = await axios({
             method: 'GET',
             url: cleanUrl,
             responseType: 'stream',
             maxRedirects: 10,
+            beforeRedirect: (redirectOptions) => {
+                const redirectUrl = `${redirectOptions.protocol}//${redirectOptions.hostname}${redirectOptions.path || ''}`
+                if (!isSafeExternalUrl(redirectUrl)) throw new Error('La redireccion de descarga fue bloqueada por seguridad.')
+            },
             timeout: 300000,
             headers: {
                 'User-Agent': 'ObsidianLauncher/1.0'
@@ -2060,6 +2499,10 @@ async function downloadFile(url, dest, options = {}) {
         let lastActivityAt = 0
         const startedAt = Date.now()
         const totalSize = Number(response.headers['content-length'] || 0)
+        if (totalSize > maxBytes) {
+            response.data.destroy()
+            throw new Error('La descarga supera el limite de seguridad permitido.')
+        }
         const startProgress = Number(options.progressStart || 0)
         const endProgress = Number(options.progressEnd || startProgress)
         activeDownloadStream = response.data
@@ -2091,6 +2534,10 @@ async function downloadFile(url, dest, options = {}) {
                 }
 
                 downloaded += chunk.length
+                if (downloaded > maxBytes) {
+                    callback(new Error('La descarga supero el limite de seguridad permitido.'))
+                    return
+                }
                 const elapsedSeconds = Math.max(0.1, (Date.now() - startedAt) / 1000)
                 const speed = downloaded / elapsedSeconds
                 const remaining = totalSize > downloaded && speed > 0 ? (totalSize - downloaded) / speed : 0
@@ -2270,12 +2717,12 @@ function getLoaderFromDependencies(dependencies = {}, project = {}) {
 }
 
 async function installMrpack(zipPath, gamePath, project) {
-    const zip = new AdmZip(zipPath)
+    const zip = openValidatedZip(zipPath)
     const indexEntry = zip.getEntry('modrinth.index.json')
 
     if (!indexEntry) {
         log('Extrayendo paquete zip...')
-        await extractZip(zipPath, { dir: gamePath })
+        await zip.extractAllToAsync(gamePath, true, false)
         return {
             minecraftVersion: project.minecraft_version,
             loader: project.loader,
@@ -2525,39 +2972,87 @@ async function installLoader(basePath, gamePath, project) {
 }
 
 async function fetchRemoteConfig() {
+    let packagedContent = null
     try {
-        log('Sincronizando catalogo de Obsidian Studios...')
-        const webConfig = await axios.get(getFreshConfigUrl(), {
+        packagedContent = readContentFile(LOCAL_CONTENT_FILE)
+    } catch (err) {
+        log(`Contenido incluido no disponible: ${err.message}`)
+    }
+
+    try {
+        log('Sincronizando contenido central de Obsidian Studios...')
+        const webConfig = await axios.get(getFreshConfigUrl(CONTENT_URL), {
             headers: {
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 Pragma: 'no-cache',
                 Expires: '0'
             },
-            responseType: 'text'
+            responseType: 'text',
+            timeout: 20000
         })
-
         const rawData = webConfig.data
         const parsedConfig = typeof rawData === 'string' ? JSON.parse(rawData.trim()) : rawData
-        remoteServerList = normalizeProjectList(parsedConfig)
+        const content = normalizeContentDocument(parsedConfig)
+        remoteServerList = content.projects
+        remoteNewsList = content.news
+        contentSource = 'remote'
+        fs.mkdirSync(DATA_DIR, { recursive: true })
+        writeFileAtomic(CONTENT_CACHE_FILE, JSON.stringify(parsedConfig, null, 2))
         localServerList = readLocalInstances()
         refreshCombinedCatalog()
-        log(`Se han sincronizado ${remoteServerList.length} proyectos activos.`)
-        log(`Catalogo remoto: ${remoteServerList.map((project) => project.name).join(', ') || 'sin proyectos'}.`)
-    } catch (err) {
-        log(`Error en sincronizacion remota. Usando catalogo local: ${err.message}`)
-        try {
-            remoteServerList = readLocalConfig()
-            localServerList = readLocalInstances()
-            cachedServerList = [...remoteServerList, ...localServerList]
-        } catch (localErr) {
-            remoteServerList = []
-            localServerList = readLocalInstances()
-            cachedServerList = [...localServerList]
-            log(`Error leyendo catalogo local: ${localErr.message}`)
-        }
-        refreshCombinedCatalog()
-        log(`Catalogo local: ${cachedServerList.map((project) => project.name).join(', ') || 'sin proyectos'}.`)
+        log(`Contenido central sincronizado: ${remoteServerList.length} proyectos y ${remoteNewsList.length} noticias.`)
+        return
+    } catch (remoteErr) {
+        log(`Fuente central no disponible: ${remoteErr.message}`)
     }
+
+    try {
+        const legacyResponse = await axios.get(getFreshConfigUrl(LEGACY_CONFIG_URL), {
+            headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache', Expires: '0' },
+            responseType: 'text',
+            timeout: 15000
+        })
+        const legacyRaw = typeof legacyResponse.data === 'string' ? JSON.parse(legacyResponse.data.trim()) : legacyResponse.data
+        const packagedNormalized = packagedContent ? normalizeContentDocument(packagedContent) : { projects: [], news: [] }
+        remoteServerList = normalizeProjectList(legacyRaw).map((project) => {
+            const baseline = packagedNormalized.projects.find((item) => item.id.toLowerCase() === project.id.toLowerCase() && item.modpack_url === project.modpack_url)
+            return baseline ? { ...project, file_type: baseline.file_type, file_size: baseline.file_size, file_sha256: baseline.file_sha256 } : project
+        })
+        remoteNewsList = packagedNormalized.news
+        contentSource = 'legacy-remote'
+        localServerList = readLocalInstances()
+        refreshCombinedCatalog()
+        log(`Catalogo de compatibilidad sincronizado: ${remoteServerList.length} proyectos. Las claves publicas antiguas fueron ignoradas.`)
+        return
+    } catch (legacyErr) {
+        log(`Catalogo de compatibilidad no disponible: ${legacyErr.message}`)
+    }
+
+    const fallbackSources = [
+        { name: 'cache', file: CONTENT_CACHE_FILE },
+        { name: 'packaged', file: LOCAL_CONTENT_FILE }
+    ]
+    for (const source of fallbackSources) {
+        try {
+            const content = normalizeContentDocument(readContentFile(source.file))
+            remoteServerList = content.projects
+            remoteNewsList = content.news
+            contentSource = source.name
+            localServerList = readLocalInstances()
+            refreshCombinedCatalog()
+            log(`Contenido recuperado desde ${source.name}: ${remoteServerList.length} proyectos y ${remoteNewsList.length} noticias.`)
+            return
+        } catch (fallbackErr) {
+            log(`No se pudo leer ${source.name}: ${fallbackErr.message}`)
+        }
+    }
+
+    remoteServerList = readLocalConfig()
+    remoteNewsList = []
+    contentSource = 'legacy-local'
+    localServerList = readLocalInstances()
+    refreshCombinedCatalog()
+    log('Se uso el catalogo local de emergencia sin noticias dinamicas.')
 }
 
 ipcMain.on('refresh-catalog', async () => {
@@ -2572,7 +3067,22 @@ ipcMain.on('download-and-install-launcher-update', async (event, updatePayload =
     if (launcherUpdateInProgress) return
     launcherUpdateInProgress = true
     try {
-        const update = normalizeLauncherUpdate(updatePayload)
+        if (updatePayload?.provider === 'electron-updater') {
+            if (!app.isPackaged) throw new Error('Las actualizaciones integradas solo se instalan desde una compilacion instalada.')
+            if (launcherUpdateReady || updatePayload.ready_to_install) {
+                log('Reiniciando para instalar la actualizacion verificada...')
+                sendToRenderer('launcher-update-installing', activeLauncherUpdate || updatePayload)
+                setTimeout(() => autoUpdater.quitAndInstall(false, true), 250)
+                return
+            }
+            activeLauncherUpdate = { ...updatePayload, provider: 'electron-updater' }
+            log(`Descargando actualizacion del launcher v${updatePayload.latest_version} mediante el actualizador integrado...`)
+            sendToRenderer('launcher-update-download-started', activeLauncherUpdate)
+            await autoUpdater.downloadUpdate()
+            return
+        }
+
+        const update = normalizeLauncherUpdate(activeLauncherUpdate)
         if (!update) throw new Error('No se pudo leer la informacion de actualizacion.')
         if (!isNewerVersion(update.latest_version, update.current_version)) {
             sendToRenderer('launcher-update-current', update)
@@ -2702,7 +3212,7 @@ function updateLocalProjectConfig(projectId, updates = {}) {
         loader_version: String(updates.loader_version ?? existing.loader_version ?? '').trim(),
         fabric_version: loader === 'fabric' ? String(updates.loader_version ?? existing.loader_version ?? '').trim() : '',
         status: ''
-    })
+    }, 0, { trustedLocal: true })
     const needsConfig = !next.minecraft_version || (!next.loader && next.loader !== 'vanilla') || (next.loader && next.loader !== 'vanilla' && !next.loader_version)
     next.status = existing.requires_curseforge_api ? 'needs_curseforge_api' : (needsConfig ? 'needs_config' : '')
     localServerList[index] = next
@@ -3037,7 +3547,7 @@ function importConfigPresetFromInstance(sourceProject, targetProject, groups = [
 }
 
 function importConfigPresetFromArchive(archivePath, targetProject, groups = []) {
-    const zip = new AdmZip(archivePath)
+    const zip = openValidatedZip(archivePath)
     const entries = zip.getEntries().filter((entry) => !entry.isDirectory)
     const prefix = findZipContentRoot(zip) || ''
     const targetGame = path.join(getInstanceBasePath(targetProject), 'game')
@@ -3250,7 +3760,7 @@ async function completeDiscordLogin(accessToken) {
         accessToken
     }
 
-    saveJson(SESSION_FILE, discordUser)
+    saveSecureJson(SESSION_FILE, discordUser)
     sendToRenderer('discord-login-success', discordUser)
     log(`Discord vinculado: ${discordUser.global_name || discordUser.username}`)
 
@@ -3324,7 +3834,7 @@ function stopDiscordCallbackServer() {
 
 function openDiscordAuthUrl() {
     const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=token&scope=identify%20guilds.members.read&prompt=consent`
-    shell.openExternal(authUrl)
+    openExternalSafe(authUrl).catch((err) => log(`No se pudo abrir Discord: ${err.message}`))
 }
 
 ipcMain.on('login-discord', () => {
@@ -3407,9 +3917,7 @@ ipcMain.on('get-launcher-version', () => {
 })
 
 ipcMain.on('open-external-url', (event, url) => {
-    const target = String(url || '').trim()
-    if (!/^https?:\/\//i.test(target)) return
-    shell.openExternal(target)
+    openExternalSafe(url).catch((err) => log(err.message))
 })
 
 ipcMain.on('get-minecraft-profile', () => {
@@ -3431,7 +3939,7 @@ ipcMain.on('save-minecraft-profile', (event, profile) => {
         mode: minecraftProfile.mode === 'premium' ? 'premium' : 'offline'
     }
 
-    saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+    saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
     sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     log(`Perfil de Minecraft guardado: ${minecraftProfile.username}`)
 })
@@ -3456,7 +3964,7 @@ ipcMain.on('login-minecraft-premium', async () => {
 })
 
 ipcMain.on('open-minecraft-skin-page', () => {
-    shell.openExternal('https://www.minecraft.net/msaprofile/mygames/editskin')
+    openExternalSafe('https://www.minecraft.net/msaprofile/mygames/editskin').catch((err) => log(err.message))
 })
 
 ipcMain.on('select-local-skin', async (event, options = {}) => {
@@ -3619,7 +4127,7 @@ ipcMain.on('logout-minecraft', () => {
         auth: null,
         microsoftRefreshToken: ''
     }
-    saveJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
+        saveSecureJson(MINECRAFT_PROFILE_FILE, minecraftProfile)
     sendToRenderer('minecraft-profile', getSafeMinecraftProfile())
     log('Sesion de Minecraft eliminada.')
 })
@@ -3685,17 +4193,54 @@ function applyMinecraftDefaultSettings(gamePath) {
     log('Ajustes base de Minecraft aplicados a options.txt.')
 }
 
-function cleanManagedModpackContent(gamePath) {
+function beginManagedContentTransaction(gamePath) {
     const managed = ['mods', 'resourcepacks', 'shaderpacks', 'config', 'defaultconfigs', 'kubejs']
-    let removed = 0
-    for (const relative of managed) {
-        const target = path.join(gamePath, relative)
-        if (!fs.existsSync(target)) continue
-        fs.rmSync(target, { recursive: true, force: true })
-        removed += 1
+    const backupRoot = path.join(path.dirname(gamePath), `.install-backup-${Date.now()}`)
+    const moved = []
+    fs.mkdirSync(backupRoot, { recursive: true })
+
+    try {
+        for (const relative of managed) {
+            const target = path.join(gamePath, relative)
+            const backup = path.join(backupRoot, relative)
+            if (fs.existsSync(target)) {
+                fs.mkdirSync(path.dirname(backup), { recursive: true })
+                fs.renameSync(target, backup)
+                moved.push(relative)
+            }
+            fs.mkdirSync(target, { recursive: true })
+        }
+        if (moved.length) log(`Contenido anterior protegido para recuperacion: ${moved.length} carpeta(s).`)
+        return { gamePath, backupRoot, managed, moved }
+    } catch (err) {
+        rollbackManagedContentTransaction({ gamePath, backupRoot, managed, moved })
+        throw new Error(`No se pudo preparar una instalacion recuperable: ${err.message}`)
     }
-    for (const relative of managed) fs.mkdirSync(path.join(gamePath, relative), { recursive: true })
-    if (removed) log('Contenido anterior del modpack limpiado: ' + removed + ' carpeta(s).')
+}
+
+function commitManagedContentTransaction(transaction) {
+    if (!transaction?.backupRoot) return
+    fs.rmSync(transaction.backupRoot, { recursive: true, force: true })
+    log('Punto de recuperacion temporal eliminado tras completar la instalacion.')
+}
+
+function rollbackManagedContentTransaction(transaction) {
+    if (!transaction?.gamePath || !transaction?.backupRoot) return false
+    try {
+        for (const relative of transaction.managed || []) {
+            const target = path.join(transaction.gamePath, relative)
+            const backup = path.join(transaction.backupRoot, relative)
+            fs.rmSync(target, { recursive: true, force: true })
+            if (fs.existsSync(backup)) fs.renameSync(backup, target)
+            else fs.mkdirSync(target, { recursive: true })
+        }
+        fs.rmSync(transaction.backupRoot, { recursive: true, force: true })
+        log('La instalacion fallo y el contenido anterior fue restaurado correctamente.')
+        return true
+    } catch (err) {
+        log(`No se pudo completar la recuperacion automatica: ${err.message}. Respaldo: ${transaction.backupRoot}`)
+        return false
+    }
 }
 
 ipcMain.on('install-pack', async () => {
@@ -3711,8 +4256,9 @@ ipcMain.on('install-pack', async () => {
     const basePath = getInstanceBasePath(currentProject)
     const gamePath = path.join(basePath, 'game')
     const localPackPath = currentProject.local_pack_path || ''
-    const packageExt = localPackPath ? getPackExtension(localPackPath) : (currentProject.modpack_url?.toLowerCase().includes('.mrpack') ? 'mrpack' : 'zip')
+    const packageExt = localPackPath ? getPackExtension(localPackPath) : (currentProject.file_type || (currentProject.modpack_url?.toLowerCase().includes('.mrpack') ? 'mrpack' : 'zip'))
     const zipPath = path.join(basePath, `modpack.${packageExt || 'zip'}`)
+    let contentTransaction = null
 
     try {
         const isEmptyLocalProject = currentProject.local && currentProject.local_pack_type === 'created' && !localPackPath && !currentProject.modpack_url
@@ -3783,9 +4329,10 @@ ipcMain.on('install-pack', async () => {
                 }
             }
 
+            await verifyProjectPackage(zipPath, currentProject)
             log('Procesando paquete de mods...')
             setProgress(30)
-            cleanManagedModpackContent(gamePath)
+            contentTransaction = beginManagedContentTransaction(gamePath)
 
             installInfo = packageExt === 'mrpack'
                 ? await installMrpack(zipPath, gamePath, currentProject)
@@ -3821,10 +4368,13 @@ ipcMain.on('install-pack', async () => {
 
         setProgress(100)
         saveInstanceManifest(currentProject)
+        commitManagedContentTransaction(contentTransaction)
+        contentTransaction = null
         log(`Entorno de [${currentProject.name}] desplegado.`)
         finishDownloadActivity('Instalacion completada')
         sendToRenderer('access-granted', { project: currentProject, ...getInstanceState(currentProject) })
     } catch (err) {
+        if (contentTransaction) rollbackManagedContentTransaction(contentTransaction)
         setProgress(0)
         sendDownloadActivity({ phase: 'Error', percent: 0, cancellable: false })
         log(`Error de instalacion: ${err.message}`)
@@ -3976,7 +4526,12 @@ ipcMain.on('kill-instance', () => {
     } catch (e) {}
 })
 
-ipcMain.on('set-ram', (e, ram) => { selectedRAM = ram })
+ipcMain.on('set-ram', (e, ram) => {
+    const requested = Math.round(Number.parseFloat(String(ram || '').replace(/[^0-9.]/g, '')))
+    const systemLimit = Math.max(2, Math.min(32, Math.floor(os.totalmem() / 1024 ** 3) - 2))
+    const safeRam = Math.max(2, Math.min(Number.isFinite(requested) ? requested : 4, systemLimit))
+    selectedRAM = `${safeRam}G`
+})
 
 ipcMain.on('open-game-folder', async () => {
     if (!currentProject) {

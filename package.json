@@ -7,8 +7,14 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.js && node --check src/renderer.js",
-    "dist": "electron-builder --win nsis"
+    "check": "node --check main.js && node --check preload.js && node --check src/renderer.js",
+    "test:smoke": "node scripts/smoke-test.js",
+    "audit:prod": "npm audit --omit=dev",
+    "content:validate": "node scripts/content-tool.js validate",
+    "content:hash": "node scripts/content-tool.js hash",
+    "content:admin": "node scripts/content-admin-server.js",
+    "dist": "electron-builder --win nsis --publish never",
+    "dist:dir": "electron-builder --win dir --publish never"
   },
   "keywords": [],
   "author": "Pizzha",
@@ -25,13 +31,16 @@
   "build": {
     "appId": "com.obsidianstudios.launcher",
     "productName": "Obsidian Studios Launcher",
+    "artifactName": "Obsidian-Studios-Launcher-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
+      "preload.js",
       "src/**/*",
       "data/**/*",
+      "content/**/*",
       "intro.mp4",
       "intro2.mp4",
       "56x56-Logo.png",
@@ -40,7 +49,6 @@
     ],
     "win": {
       "icon": "icono.ico",
-      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
@@ -66,18 +74,31 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Obsidian Studios Launcher"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Pizzha541",
+      "repo": "ObsidianStudiosLauncher",
+      "releaseType": "release"
     }
   },
   "devDependencies": {
-    "electron": "^42.0.1",
-    "electron-builder": "^26.8.1"
+    "electron": "^42.11.18",
+    "electron-builder": "^26.18.0"
   },
   "dependencies": {
-    "adm-zip": "^0.5.17",
-    "axios": "^1.16.1",
-    "extract-zip": "^2.0.1",
+    "adm-zip": "^0.6.1",
+    "axios": "^1.21.1",
+    "electron-updater": "^6.8.11",
+    "fflate": "^0.8.3",
     "minecraft-launcher-core": "^3.18.2",
     "msmc": "^5.0.5",
     "skinview3d": "^3.4.2"
+  },
+  "overrides": {
+    "fflate": "$fflate",
+    "minecraft-launcher-core": {
+      "adm-zip": "0.6.1"
+    }
   }
 }

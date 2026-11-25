@@ -2,12 +2,14 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Obsidian Launcher</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="intro-overlay" id="intro-overlay">
-    <video class="intro-video" id="intro-video" src="../intro2.mp4" autoplay playsinline></video>
+<div class="intro-overlay" id="intro-overlay" role="dialog" aria-modal="true" aria-label="Introduccion de Obsidian Studios">
+    <video class="intro-video" id="intro-video" src="../intro2.mp4" autoplay playsinline aria-label="Introduccion de Obsidian Studios"></video>
     <button class="intro-skip" id="intro-skip" type="button">Saltar</button>
     <button class="intro-start" id="intro-start" type="button">Iniciar</button>
 </div>
@@ -36,9 +38,14 @@
         <section id="view-home" class="tab-view active">
             <header class="catalog-header">
                 <div><span class="eyebrow" data-i18n="home.eyebrow">Obsidian Network</span><h1 data-i18n="home.title">Instancias disponibles</h1><p class="page-subtitle" data-i18n="home.subtitle">Selecciona, actualiza y juega tus proyectos privados desde un solo lugar.</p></div>
-                <div class="header-actions">
+                <div class="header-actions catalog-actions">
                     <div class="sync-pill" data-i18n="status.online">Online</div>
-                    <label class="search-box"><span data-i18n="action.search">Buscar</span><input id="catalog-search" type="search" placeholder="Buscar instancia..." data-i18n-placeholder="search.instance" oninput="filterCatalog(this.value)"></label>
+                    <div class="catalog-toolbar" aria-label="Filtros del catalogo">
+                        <label class="search-box"><span data-i18n="action.search">Buscar</span><input id="catalog-search" type="search" placeholder="Buscar instancia..." data-i18n-placeholder="search.instance" oninput="filterCatalog(this.value)"></label>
+                        <select id="catalog-access-filter" class="catalog-select" aria-label="Filtrar por acceso" onchange="filterCatalogAccess(this.value)"><option value="all" data-i18n="catalog.accessAll">Todo acceso</option><option value="public" data-i18n="catalog.public">Publicas</option><option value="private" data-i18n="catalog.private">Privadas</option></select>
+                        <select id="catalog-state-filter" class="catalog-select" aria-label="Filtrar por estado" onchange="filterCatalogState(this.value)"><option value="all" data-i18n="catalog.stateAll">Todo estado</option><option value="installed" data-i18n="catalog.installed">Instaladas</option><option value="updates" data-i18n="catalog.updates">Con actualizacion</option><option value="missing" data-i18n="catalog.missing">Sin instalar</option></select>
+                        <select id="catalog-sort" class="catalog-select" aria-label="Ordenar catalogo" onchange="sortCatalog(this.value)"><option value="featured" data-i18n="catalog.featured">Destacadas</option><option value="name" data-i18n="catalog.name">Nombre A-Z</option><option value="version" data-i18n="catalog.version">Version reciente</option></select>
+                    </div>
                 </div>
             </header>
             <div class="catalog-workspace">
@@ -46,8 +53,8 @@
                     <div class="panel-heading"><div><span class="section-kicker" data-i18n="home.library">Biblioteca</span><h2 data-i18n="home.projects">Proyectos</h2></div><span id="catalog-count">0</span></div>
                     <div class="sidebar-panel instance-grid" id="instance-grid"><div class="empty-state">Sincronizando catalogo...</div></div>
                     <div class="access-panel">
-                        <div><strong data-i18n="access.title">Acceso privado</strong><span data-i18n="access.copy">Usa la clave de la instancia seleccionada.</span></div>
-                        <div class="access-actions"><div class="code-box"><input id="code-input" type="password" placeholder="Clave de acceso" data-i18n-placeholder="access.placeholder"><button class="code-submit" onclick="enviarCodigo()" data-i18n="action.unlock">Desbloquear</button></div><button class="utility-button access-refresh" onclick="recheckDiscordAccess()" data-i18n="action.checkRole">Comprobar rol</button></div>
+                        <div><strong data-i18n="access.title">Acceso privado</strong><span id="access-help">Selecciona una instancia para comprobar su acceso.</span></div>
+                        <div class="access-actions"><div class="code-box" id="access-code-box"><input id="code-input" type="password" placeholder="Clave de acceso" data-i18n-placeholder="access.placeholder"><button class="code-submit" onclick="enviarCodigo()" data-i18n="action.unlock">Desbloquear</button></div><button class="utility-button access-refresh" id="access-role-button" onclick="recheckDiscordAccess()" data-i18n="action.checkRole">Comprobar rol</button></div>
                     </div>
                 </section>
                 <section class="selected-section">
@@ -66,19 +73,9 @@
         </section>
         <section id="view-news" class="tab-view">
             <header class="catalog-header news-header"><div><span class="eyebrow" data-i18n="news.eyebrow">Obsidian Broadcast</span><h1 data-i18n="news.title">Noticias y anuncios</h1></div></header>
-            <div class="news-layout loading-fade">
-                <article class="news-featured reveal-item" role="button" tabindex="0" onclick="openAnnouncement('client-108')" onkeydown="activateAnnouncement(event, 'client-108')">
-                    <span class="news-date">15 / 08 / 2026</span><div class="news-badge">Launcher</div>
-                    <h2>Obsidian Client v1.0.8</h2>
-                    <p>Correccion del renombrado de skins y mensajes de descarga mas claros para detectar URLs fallidas.</p>
-                    <span class="news-read">Abrir changelog -></span>
-                </article>
-                <div class="news-feed">
-                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('ltdn-update')" onkeydown="activateAnnouncement(event, 'ltdn-update')"><span>23 / 06 / 2026</span><div><strong>La Tierra de Nadie v1.0.1</strong><p>Optimizacion, sistema de voz y correcciones de estabilidad.</p><b>Leer anuncio -></b></div></article>
-                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('restricted-event')" onkeydown="activateAnnouncement(event, 'restricted-event')"><span>20 / 06 / 2026</span><div><strong>Nuevo evento: El Acceso Restringido</strong><p>Una experiencia de rol limitada para miembros autorizados.</p><b>Leer anuncio -></b></div></article>
-                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('discord-server')" onkeydown="activateAnnouncement(event, 'discord-server')"><span>12 / 06 / 2026</span><div><strong>Nuevo servidor de Discord</strong><p>Los accesos por rol ahora se validan en la nueva comunidad de Obsidian Studios.</p><b>Leer anuncio -></b></div></article>
-                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('automatic-java')" onkeydown="activateAnnouncement(event, 'automatic-java')"><span>03 / 06 / 2026</span><div><strong>Java automatico</strong><p>El launcher descarga el runtime necesario para cada version de Minecraft.</p><b>Leer anuncio -></b></div></article>
-                </div>
+            <div class="news-layout loading-fade" id="news-layout" aria-live="polite">
+                <article class="news-featured news-placeholder"><span class="news-date">Sincronizando</span><h2>Cargando noticias...</h2><p>Obteniendo las publicaciones de Obsidian Studios.</p></article>
+                <div class="news-feed" id="news-feed"></div>
             </div>
         </section>
         <section id="view-account" class="tab-view">
@@ -213,11 +210,11 @@
             <button class="appearance-close" onclick="closeDownloadCenter()" title="Cerrar" aria-label="Cerrar">x</button>
         </header>
         <div class="download-center-body">
-            <div class="download-now"><div><span>Descarga actual</span><strong id="download-title">Sin descargas activas</strong></div><b id="download-percent">0%</b></div>
+            <div class="download-now-heading"><div><span>Descarga actual</span><h3 id="download-title">Sin descargas activas</h3></div><strong id="download-percent">0%</strong></div>
             <div class="download-track"><i id="download-bar"></i></div>
             <div class="download-stats"><span id="download-files">Archivos 0 / 0</span><span id="download-size">0 B / 0 B</span><span id="download-speed">Velocidad: 0 B/s</span><span id="download-eta">Tiempo restante: --:--</span></div>
             <div class="download-breakdown" id="download-breakdown"><span>Mods 0 / 0</span><span>Texturas 0 / 0</span><span>Configuraciones 0 / 0</span></div>
-            <div class="download-actions"><button class="btn-secondary" onclick="pauseDownloadCenter()" data-i18n="downloads.pause">Pausar</button><button class="btn-secondary" onclick="resumeDownloadCenter()" data-i18n="downloads.resume">Reanudar</button><button class="btn-secondary danger" onclick="cancelDownloadCenter()" data-i18n="downloads.cancel">Cancelar</button></div>
+            <div class="download-actions"><button class="btn-secondary" id="download-pause-btn" onclick="pauseDownloadCenter()" data-i18n="downloads.pause">Pausar</button><button class="btn-secondary" id="download-resume-btn" onclick="resumeDownloadCenter()" data-i18n="downloads.resume">Reanudar</button><button class="btn-secondary danger" id="download-cancel-btn" onclick="cancelDownloadCenter()" data-i18n="downloads.cancel">Cancelar</button></div>
         </div>
     </article>
 </div>

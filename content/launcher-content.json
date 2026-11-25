@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-24T00:00:00.000Z",
+  "catalog": {
+    "title": "Obsidian Studios",
+    "maintenance": false,
+    "message": ""
+  },
+  "projects": [
+    {
+      "id": "ltdn",
+      "name": "La Tierra de Nadie",
+      "description": "SMP con mods y amigos.",
+      "project_version": "1.0.1",
+      "minecraft_version": "1.21.8",
+      "loader": "neoforge",
+      "loader_version": "21.8.53",
+      "featured": true,
+      "image": "https://files.catbox.moe/a3txg0.png",
+      "trailer_url": "https://youtu.be/qLKebIF-EtI?si=oxusD_OTGBK5r0zU",
+      "file": {
+        "type": "zip",
+        "url": "https://github.com/Pizzha541/testmodpack/releases/download/1.0.1/Nueva.carpeta.2.zip",
+        "size": 407460654,
+        "sha256": "54f89136204f123ffdc7da32885239d0fc76b55625493a882250cf9f67ea654c"
+      },
+      "access": {
+        "type": "discord_role",
+        "guild_id": "1515139525624725616",
+        "role_id": "1515139525624725617"
+      },
+      "changelog": [
+        "Optimizacion de FPS",
+        "Nuevo sistema de voz",
+        "Correcciones de estabilidad"
+      ]
+    },
+    {
+      "id": "proyecto_lore2",
+      "name": "El Acceso Restringido",
+      "description": "Minievento de rol.",
+      "project_version": "1.0.0",
+      "minecraft_version": "1.20.1",
+      "loader": "forge",
+      "loader_version": "47.4.10",
+      "image": "https://files.catbox.moe/xp4jjv.png",
+      "file": {
+        "type": "zip",
+        "url": "https://github.com/Pizzha541/testmodpack/releases/download/rol/ulisesrol.zip",
+        "size": 520483002,
+        "sha256": "b01d008b505cc97585be83c2a49b047d6c9327d1482b5d33c2c5d602454b5f41"
+      },
+      "access": {
+        "type": "discord_role",
+        "guild_id": "1515139525624725616",
+        "role_id": "1515139525624725618"
+      },
+      "changelog": [
+        "Mejoras de estabilidad"
+      ]
+    },
+    {
+      "id": "arbc",
+      "name": "AERO THE BIG CRAFT",
+      "description": "Minecraft con Create y otros mods.",
+      "project_version": "1.0.0",
+      "minecraft_version": "1.21.1",
+      "loader": "neoforge",
+      "loader_version": "21.1.232",
+      "image": "https://files.catbox.moe/lpho3w.png",
+      "file": {
+        "type": "mrpack",
+        "url": "https://github.com/Pizzha541/testmodpack/releases/download/nuevi/AERO.THE.BIG.CRAFT.1.0.0.mrpack",
+        "size": 21829940,
+        "sha256": "5fa12fb1dd8818547a63d9551e3b501f7b8ea0f2741a5f69db0bb84fdc2c6e4c"
+      },
+      "access": {
+        "type": "discord_role",
+        "guild_id": "1515139525624725616",
+        "role_id": "1515139525624725618"
+      },
+      "changelog": [
+        "Mejoras de estabilidad"
+      ]
+    }
+  ],
+  "news": [
+    {
+      "id": "client-109",
+      "status": "published",
+      "featured": true,
+      "priority": 100,
+      "type": "launcher",
+      "title": "Obsidian Client v1.0.9",
+      "summary": "Actualizador integrado, instalaciones recuperables, mayor seguridad y una experiencia mas clara.",
+      "content": "Nuevo\n- Actualizador integrado con verificacion criptografica y progreso de descarga.\n- Catalogo y noticias administrados desde una fuente central.\n- Diagnostico persistente para soporte.\n\nMejorado\n- Instalaciones recuperables con restauracion automatica.\n- Sesiones protegidas con el almacenamiento seguro de Windows.\n- Navegacion, accesibilidad y mensajes de error mas claros.",
+      "image": "../56x56-Logo.png",
+      "publish_at": "2026-11-24T00:00:00.000Z",
+      "action": {
+        "type": "versions",
+        "label": "Comprobar versiones"
+      },
+      "tags": ["launcher", "1.0.9"]
+    },
+    {
+      "id": "ltdn-update",
+      "status": "published",
+      "priority": 80,
+      "type": "update",
+      "title": "La Tierra de Nadie llega a la v1.0.1",
+      "summary": "Optimizacion, sistema de voz y correcciones de estabilidad.",
+      "content": "Esta version incorpora optimizaciones de FPS, prepara el nuevo sistema de voz y corrige problemas de estabilidad.",
+      "image": "https://files.catbox.moe/a3txg0.png",
+      "publish_at": "2026-06-23T12:00:00.000Z",
+      "project_id": "ltdn",
+      "version": "1.0.1",
+      "action": {
+        "type": "project",
+        "value": "ltdn",
+        "label": "Ver instancia"
+      }
+    },
+    {
+      "id": "restricted-event",
+      "status": "published",
+      "priority": 60,
+      "type": "event",
+      "title": "El Acceso Restringido",
+      "summary": "Una experiencia de rol limitada para miembros autorizados.",
+      "content": "Consulta la instancia y vincula Discord para comprobar el rol requerido. Las claves privadas ya no se publican dentro del catalogo.",
+      "image": "https://files.catbox.moe/xp4jjv.png",
+      "publish_at": "2026-06-20T12:00:00.000Z",
+      "project_id": "proyecto_lore2",
+      "action": {
+        "type": "project",
+        "value": "proyecto_lore2",
+        "label": "Ver instancia"
+      }
+    },
+    {
+      "id": "discord-server",
+      "status": "published",
+      "priority": 40,
+      "type": "community",
+      "title": "Comunidad de Obsidian Studios",
+      "summary": "Los accesos privados se validan mediante roles de Discord.",
+      "content": "Vincula tu cuenta desde Mi Cuenta para que el launcher compruebe tus roles sin guardar contrasenas del catalogo.",
+      "publish_at": "2026-06-12T12:00:00.000Z",
+      "action": {
+        "type": "tab",
+        "value": "account",
+        "label": "Ir a Mi Cuenta"
+      }
+    }
+  ]
+}

@@ -1,4 +1,12 @@
-const { clipboard, ipcRenderer, webUtils } = require('electron')
+const desktop = window.obsidianDesktop
+if (!desktop) throw new Error('No se pudo cargar el puente seguro del launcher.')
+
+const clipboard = desktop.clipboard
+const webUtils = { getPathForFile: (file) => desktop.getPathForFile(file) }
+const ipcRenderer = {
+    send: (channel, payload) => desktop.send(channel, payload),
+    on: (channel, listener) => desktop.on(channel, (...args) => listener(null, ...args))
+}
 
 let targetServerId = null
 let selectedProject = null
@@ -8,6 +16,9 @@ let appearanceSkinViewer = null
 let detectedCapeUrl = ''
 let currentServers = []
 let catalogFilter = ''
+let catalogAccessFilter = 'all'
+let catalogStateFilter = 'all'
+let catalogSort = 'featured'
 let accessRequestId = 0
 let pendingAccess = null
 let localProjects = []
@@ -82,6 +93,11 @@ const announcementImage = document.getElementById('announcement-image')
 const announcementTitle = document.getElementById('announcement-title')
 const announcementBody = document.getElementById('announcement-body')
 const announcementAction = document.getElementById('announcement-action')
+const newsLayout = document.getElementById('news-layout')
+const newsFeed = document.getElementById('news-feed')
+const accessHelp = document.getElementById('access-help')
+const accessCodeBox = document.getElementById('access-code-box')
+const accessRoleButton = document.getElementById('access-role-button')
 const launcherUpdateModal = document.getElementById('launcher-update-modal')
 const launcherUpdateTitle = document.getElementById('launcher-update-title')
 const launcherUpdateBody = document.getElementById('launcher-update-body')
@@ -107,6 +123,9 @@ const downloadSize = document.getElementById('download-size')
 const downloadSpeed = document.getElementById('download-speed')
 const downloadEta = document.getElementById('download-eta')
 const downloadBreakdown = document.getElementById('download-breakdown')
+const downloadPauseButton = document.getElementById('download-pause-btn')
+const downloadResumeButton = document.getElementById('download-resume-btn')
+const downloadCancelButton = document.getElementById('download-cancel-btn')
 const onboardingModal = document.getElementById('onboarding-modal')
 const accountLanguageList = document.getElementById('account-language-list')
 const microsoftSyncStatus = document.getElementById('microsoft-sync-status')
@@ -172,6 +191,16 @@ const translations = {
         'support.feedback': 'Feedback',
         'status.online': 'Online',
         'action.search': 'Buscar',
+        'catalog.accessAll': 'Todo acceso',
+        'catalog.public': 'Publicas',
+        'catalog.private': 'Privadas',
+        'catalog.stateAll': 'Todo estado',
+        'catalog.installed': 'Instaladas',
+        'catalog.updates': 'Con actualizacion',
+        'catalog.missing': 'Sin instalar',
+        'catalog.featured': 'Destacadas',
+        'catalog.name': 'Nombre A-Z',
+        'catalog.version': 'Version reciente',
         'action.unlock': 'Desbloquear',
         'action.checkRole': 'Comprobar rol',
         'search.instance': 'Buscar instancia...',
@@ -351,6 +380,16 @@ const translations = {
         'support.feedback': 'Feedback',
         'status.online': 'Online',
         'action.search': 'Search',
+        'catalog.accessAll': 'All access',
+        'catalog.public': 'Public',
+        'catalog.private': 'Private',
+        'catalog.stateAll': 'All states',
+        'catalog.installed': 'Installed',
+        'catalog.updates': 'Updates available',
+        'catalog.missing': 'Not installed',
+        'catalog.featured': 'Featured',
+        'catalog.name': 'Name A-Z',
+        'catalog.version': 'Newest version',
         'action.unlock': 'Unlock',
         'action.checkRole': 'Check role',
         'search.instance': 'Search instance...',
@@ -749,13 +788,7 @@ function stopInstallPulse() {
     document.body.classList.remove('is-installing')
 }
 
-const announcements = {
-    'client-108': { date: '15 / 08 / 2026', label: 'Launcher', image: '../56x56-Logo.png', title: 'Obsidian Client - v1.0.8', body: 'Fixed\n- El boton de renombrar skins ahora actualiza el nombre al instante y conserva la seleccion.\n- Los botones de skins ya no disparan acciones dobles dentro de la tarjeta.\n- Los errores de descarga ahora muestran HTTP/status y la URL exacta que fallo.\n\nImproved\n- Diagnostico mas claro para modpacks, dependencias mrpack y loaders.\n- Preparado el versionado interno para la rama 1.0.8.', actionLabel: 'Comprobar versiones', action: { type: 'versions' } },
-    'ltdn-update': { date: '23 / 06 / 2026', label: 'Actualizacion', image: 'https://files.catbox.moe/a3txg0.png', title: 'La Tierra de Nadie llega a la v1.0.1', body: 'Esta version incorpora optimizaciones de FPS, prepara el nuevo sistema de voz y corrige problemas de estabilidad detectados en Fabric.', actionLabel: 'Ver instancia', action: { type: 'project', value: 'ltdn' } },
-    'restricted-event': { date: '20 / 06 / 2026', label: 'Evento', image: 'https://files.catbox.moe/xp4jjv.png', title: 'Nuevo evento: El Acceso Restringido', body: 'Una experiencia limitada de rol para miembros autorizados. Consulta la instancia para comprobar tu acceso mediante clave privada o rol de Discord.', actionLabel: 'Ver instancia', action: { type: 'project', value: 'proyecto_lore2' } },
-    'discord-server': { date: '12 / 06 / 2026', label: 'Comunidad', title: 'Nuevo servidor de Discord', body: 'La validacion de roles ya utiliza el nuevo servidor de Obsidian Studios. Si el launcher todavia muestra "Sin vincular", vuelve a iniciar sesion desde Mi Cuenta.', actionLabel: 'Ir a Mi Cuenta', action: { type: 'tab', value: 'account' } },
-    'automatic-java': { date: '03 / 06 / 2026', label: 'Launcher', title: 'Java automatico para cada instancia', body: 'El launcher detecta la version de Minecraft y prepara automaticamente el runtime de Java compatible, incluyendo Java 8, 17, 21 o 25 cuando sea necesario.', actionLabel: 'Ver configuracion', action: { type: 'tab', value: 'account' } }
-}
+let announcements = {}
 const logHistory = ['Inicializando componentes base del entorno...']
 const SUPPORT_URL = 'https://sites.google.com/view/obsidianstudios/feedback-launcher'
 const BUG_DISCORD_URL = 'https://discord.gg/eU8n9PYN9Q'
@@ -764,6 +797,36 @@ function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[char]))
+}
+
+function formatNewsDate(value) {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return new Intl.DateTimeFormat(currentLanguage === 'en' ? 'en-US' : 'es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
+}
+
+function renderDynamicNews(items = []) {
+    if (!newsLayout || !newsFeed) return
+    const list = Array.isArray(items) ? items.filter((item) => item && item.id) : []
+    announcements = Object.fromEntries(list.map((item) => [item.id, {
+        ...item,
+        date: formatNewsDate(item.date),
+        actionLabel: item.action?.label || 'Abrir'
+    }]))
+    if (!list.length) {
+        newsLayout.innerHTML = '<article class="news-featured news-placeholder"><span class="news-date">Obsidian Broadcast</span><h2>Sin publicaciones disponibles</h2><p>El catalogo sigue funcionando. Vuelve a sincronizar para consultar las noticias.</p></article><div class="news-feed" id="news-feed"></div>'
+        return
+    }
+    const featured = list.find((item) => item.featured) || list[0]
+    const rest = list.filter((item) => item.id !== featured.id)
+    newsLayout.innerHTML = '<article class="news-featured reveal-item" role="button" tabindex="0" data-announcement-id="' + escapeHtml(featured.id) + '"><span class="news-date">' + escapeHtml(formatNewsDate(featured.date)) + '</span><div class="news-badge">' + escapeHtml(featured.label || featured.type || 'Noticia') + '</div><h2>' + escapeHtml(featured.title) + '</h2><p>' + escapeHtml(featured.summary || featured.body) + '</p><span class="news-read">' + escapeHtml(featured.action?.label || 'Leer anuncio') + ' -&gt;</span></article><div class="news-feed" id="news-feed">' + rest.map((item) => '<article class="news-item reveal-item" role="button" tabindex="0" data-announcement-id="' + escapeHtml(item.id) + '"><span>' + escapeHtml(formatNewsDate(item.date)) + '</span><div><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(item.summary || item.body) + '</p><b>' + escapeHtml(item.action?.label || 'Leer anuncio') + ' -&gt;</b></div></article>').join('') + '</div>'
+    newsLayout.querySelectorAll('[data-announcement-id]').forEach((node) => {
+        const open = () => window.openAnnouncement(node.dataset.announcementId)
+        node.addEventListener('click', open)
+        node.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open() }
+        })
+    })
 }
 
 function renderLauncherUpdate(update) {
@@ -812,11 +875,17 @@ function launcherUpdateInDownload() {
 }
 
 window.downloadLauncherUpdate = function() {
-    if (!activeLauncherUpdate?.download_url) return
-    if (launcherUpdateDownloadBtn) { launcherUpdateDownloadBtn.disabled = true; launcherUpdateDownloadBtn.innerText = 'Descargando...' }
+    if (!activeLauncherUpdate?.download_url && !activeLauncherUpdate?.provider) return
+    const readyToInstall = Boolean(activeLauncherUpdate.ready_to_install)
+    if (launcherUpdateDownloadBtn) {
+        launcherUpdateDownloadBtn.disabled = true
+        launcherUpdateDownloadBtn.innerText = readyToInstall ? 'Reiniciando...' : 'Descargando...'
+    }
     if (launcherUpdateLaterBtn) launcherUpdateLaterBtn.disabled = true
-    setLauncherUpdateProgress(0, 'Iniciando descarga...')
-    showToast(currentLanguage === 'en' ? 'Downloading launcher update...' : 'Descargando actualizacion del launcher...')
+    setLauncherUpdateProgress(readyToInstall ? 100 : 0, readyToInstall ? 'Preparando reinicio...' : 'Iniciando descarga...')
+    showToast(readyToInstall
+        ? (currentLanguage === 'en' ? 'Restarting to install...' : 'Reiniciando para instalar...')
+        : (currentLanguage === 'en' ? 'Downloading launcher update...' : 'Descargando actualizacion del launcher...'))
     ipcRenderer.send('download-and-install-launcher-update', activeLauncherUpdate)
 }
 function escapeRegExp(value) {
@@ -888,9 +957,10 @@ function isRestricted(project) {
 
 function cleanImageUrl(value) {
     let url = String(value || '').trim()
+    if (url === '../56x56-Logo.png' || /^assets\/[a-z0-9_./-]+$/i.test(url)) return url
     if (url.startsWith('file://')) return url
     if (/^[a-zA-Z]:\\|^\\\\|^\//.test(url)) return 'file:///' + url.replace(/\\/g, '/').replace(/^\/+/, '')
-    if (!url.startsWith('http')) return ''
+    if (!url.startsWith('https://')) return ''
     if (url.includes('www.dropbox.com')) {
         url = url.replace('www.dropbox.com', 'dl.dropboxusercontent.com')
         if (!url.includes('dl=1')) url += url.includes('?') ? '&dl=1' : '?dl=1'
@@ -973,20 +1043,41 @@ function renderTrailerAvailability(project) {
     trailerButton.style.display = String(project?.trailer_url || '').trim() ? 'inline-flex' : 'none'
 }
 
+function compareProjectVersions(a, b) {
+    const left = String(a || '').split(/[^0-9]+/).filter(Boolean).map(Number)
+    const right = String(b || '').split(/[^0-9]+/).filter(Boolean).map(Number)
+    const length = Math.max(left.length, right.length)
+    for (let index = 0; index < length; index += 1) {
+        const difference = (left[index] || 0) - (right[index] || 0)
+        if (difference) return difference
+    }
+    return 0
+}
+
 function getFilteredServers() {
-    if (!catalogFilter) return currentServers
-    return currentServers.filter((server) => {
+    const filtered = currentServers.filter((server) => {
         const searchable = [server.name, server.description, server.minecraft_version, server.loader, server.loader_version, server.project_version, server.status, server.source]
             .join(' ').toLowerCase()
-        return searchable.includes(catalogFilter)
+        if (catalogFilter && !searchable.includes(catalogFilter)) return false
+        if (catalogAccessFilter !== 'all' && (catalogAccessFilter === 'private') !== isRestricted(server)) return false
+        const status = getProjectStatus(server).mode
+        if (catalogStateFilter === 'installed' && status !== 'ready') return false
+        if (catalogStateFilter === 'updates' && status !== 'update') return false
+        if (catalogStateFilter === 'missing' && status !== 'install') return false
+        return true
     })
+
+    if (catalogSort === 'name') return filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), currentLanguage))
+    if (catalogSort === 'version') return filtered.sort((a, b) => compareProjectVersions(b.project_version, a.project_version) || String(a.name || '').localeCompare(String(b.name || ''), currentLanguage))
+    return filtered
 }
 
 function renderCatalogStats() {
     const total = currentServers.length
     const visible = getFilteredServers().length
     const count = document.getElementById('catalog-count')
-    if (count) count.innerText = catalogFilter ? `${visible} de ${total}` : `${total} ${currentLanguage === 'en' ? 'active' : 'activos'}`
+    const hasFilters = Boolean(catalogFilter || catalogAccessFilter !== 'all' || catalogStateFilter !== 'all')
+    if (count) count.innerText = hasFilters ? `${visible} de ${total}` : `${total} ${currentLanguage === 'en' ? 'active' : 'activos'}`
 }
 
 function drawSkinHead(canvas, image) {
@@ -1407,10 +1498,29 @@ function renderProjectPreview(project) {
     renderHeroDetails(project)
     renderChangelog(project)
     renderTrailerAvailability(project)
+    renderAccessOptions(project)
     setHeroAccess(project && isRestricted(project) ? 'Acceso privado' : 'Acceso publico', project && isRestricted(project) ? 'locked' : 'public')
     setLaunchStatus(project ? (status.mode === 'maintenance' ? 'Instancia en mantenimiento' : 'Comprobando acceso') : 'Lista para seleccionar', status.mode === 'maintenance' ? 'maintenance' : 'checking')
     setButtonState({ canDelete: Boolean(project?.isInstalled), canInstall: false, canPlay: false })
     renderCatalogStats()
+}
+
+function renderAccessOptions(project) {
+    const hasCode = Boolean(project?.codigo_acceso)
+    const hasRole = Boolean(project?.discord_role_id)
+    if (accessCodeBox) accessCodeBox.hidden = !hasCode
+    if (accessRoleButton) accessRoleButton.hidden = !hasRole
+    if (accessHelp) {
+        accessHelp.innerText = !project
+            ? 'Selecciona una instancia para comprobar su acceso.'
+            : hasCode && hasRole
+                ? 'Usa la clave privada o comprueba tu rol de Discord.'
+                : hasRole
+                    ? 'Vincula Discord y comprueba el rol requerido.'
+                    : hasCode
+                        ? 'Introduce la clave privada de esta instancia.'
+                        : 'Esta instancia no requiere credenciales.'
+    }
 }
 
 function requestProjectAccess(serverId, password = '', recheck = false) {
@@ -1554,11 +1664,13 @@ function createSkinAnimation(mode) {
 function closeIntro() {
     if (!introOverlay) return
     introOverlay.classList.add('hidden')
+    introOverlay.setAttribute('aria-hidden', 'true')
     if (introVideo) { introVideo.pause(); introVideo.currentTime = 0 }
 }
 
 function initIntro() {
     if (!introOverlay || !introVideo) return
+    introOverlay.setAttribute('aria-hidden', 'false')
     introVideo.volume = 0.08
     introVideo.addEventListener('ended', closeIntro)
     introSkip?.addEventListener('click', closeIntro)
@@ -2082,6 +2194,7 @@ window.runAnnouncementAction = function() {
     if (action.type === 'project') window.selectProjectById(action.value)
     if (action.type === 'tab') window.switchTab(action.value)
     if (action.type === 'versions') window.checkVersions()
+    if (action.type === 'external') ipcRenderer.send('open-external-url', action.value)
 }
 window.activateAnnouncement = function(event, id) {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -2115,6 +2228,9 @@ window.closeTrailer = function() {
     trailerMedia.innerHTML = ''
 }
 window.filterCatalog = function(value) { catalogFilter = String(value || '').trim().toLowerCase(); renderServerCards() }
+window.filterCatalogAccess = function(value) { catalogAccessFilter = ['public', 'private'].includes(value) ? value : 'all'; renderServerCards() }
+window.filterCatalogState = function(value) { catalogStateFilter = ['installed', 'updates', 'missing'].includes(value) ? value : 'all'; renderServerCards() }
+window.sortCatalog = function(value) { catalogSort = ['name', 'version'].includes(value) ? value : 'featured'; renderServerCards() }
 window.minimize = function() { ipcRenderer.send('minimize-app') }
 window.toggleMaximize = function() { ipcRenderer.send('toggle-maximize-app') }
 window.closeApp = function() { ipcRenderer.send('close-app') }
@@ -2201,6 +2317,9 @@ function renderDownloadCenter(data = {}) {
     if (downloadEta) downloadEta.innerText = 'Tiempo restante: ' + (state.eta || '--:--')
     if (downloadBreakdown) downloadBreakdown.innerHTML = '<span>Mods ' + (state.modsDone || 0) + ' / ' + (state.modsTotal || 0) + '</span><span>Texturas ' + (state.resourcepacksDone || 0) + ' / ' + (state.resourcepacksTotal || 0) + '</span><span>Configuraciones ' + (state.configDone || 0) + ' / ' + (state.configTotal || 0) + '</span>'
     if (downloadMini) downloadMini.innerHTML = '<strong>' + escapeHtml(title) + '</strong><span>' + Math.round(percent) + '%</span>'
+    if (downloadPauseButton) downloadPauseButton.disabled = !state.cancellable || Boolean(state.paused)
+    if (downloadResumeButton) downloadResumeButton.disabled = !state.cancellable || !state.paused
+    if (downloadCancelButton) downloadCancelButton.disabled = !state.cancellable
 }
 
 window.openDownloadCenter = function() {
@@ -2216,7 +2335,11 @@ window.closeDownloadCenter = function() {
 
 window.pauseDownloadCenter = function() { ipcRenderer.send('pause-current-download') }
 window.resumeDownloadCenter = function() { ipcRenderer.send('resume-current-download') }
-window.cancelDownloadCenter = function() { ipcRenderer.send('cancel-current-download') }
+window.cancelDownloadCenter = function() {
+    const message = currentLanguage === 'en' ? 'Cancel the active download?' : 'Cancelar la descarga activa?'
+    if (!lastDownloadState?.cancellable || !window.confirm(message)) return
+    ipcRenderer.send('cancel-current-download')
+}
 
 window.checkVersions = function() {
     openLogPanel()
@@ -2256,7 +2379,10 @@ window.openSelectedInstanceFolder = function(projectId = '') {
     const project = projectId ? getProjectById(projectId) : getSelectedContentProject()
     ipcRenderer.send('open-instance-folder', { projectId: project?.id || targetServerId || '' })
 }
-window.limpiarCache = function() { ipcRenderer.send('clear-cache') }
+window.limpiarCache = function() {
+    const message = currentLanguage === 'en' ? 'Clear the selected instance cache? Local files will need to be downloaded again.' : 'Vaciar la cache de la instancia seleccionada? Los archivos locales tendran que descargarse de nuevo.'
+    if (window.confirm(message)) ipcRenderer.send('clear-cache')
+}
 window.loginMinecraftPremium = function() { ipcRenderer.send('login-minecraft-premium') }
 window.openMinecraftSkinPage = function() { ipcRenderer.send('open-minecraft-skin-page') }
 window.logoutMinecraft = function() { ipcRenderer.send('logout-minecraft') }
@@ -2278,6 +2404,17 @@ ipcRenderer.on('launcher-update-download-started', () => {
 
 ipcRenderer.on('launcher-update-download-progress', (event, data = {}) => {
     setLauncherUpdateProgress(data.percent, currentLanguage === 'en' ? 'Downloading update...' : 'Descargando actualizacion...')
+})
+
+ipcRenderer.on('launcher-update-downloaded', (event, update = {}) => {
+    activeLauncherUpdate = { ...activeLauncherUpdate, ...update, ready_to_install: true }
+    setLauncherUpdateProgress(100, currentLanguage === 'en' ? 'Verified and ready to install.' : 'Verificada y lista para instalar.')
+    if (launcherUpdateDownloadBtn) {
+        launcherUpdateDownloadBtn.disabled = false
+        launcherUpdateDownloadBtn.innerText = currentLanguage === 'en' ? 'Restart and install' : 'Reiniciar e instalar'
+    }
+    if (launcherUpdateLaterBtn) launcherUpdateLaterBtn.disabled = false
+    showToast(currentLanguage === 'en' ? 'Update verified and ready.' : 'Actualizacion verificada y lista.', 'success')
 })
 
 ipcRenderer.on('launcher-update-installing', () => {
@@ -2446,6 +2583,14 @@ ipcRenderer.on('catalog-message', (event, message = null) => {
         showToast(remoteCatalogMessage.message || (currentLanguage === 'en' ? 'Catalog notice received.' : 'Aviso del catalogo recibido.'), remoteCatalogMessage.maintenance ? 'error' : 'info')
     }
 })
+ipcRenderer.on('content-news', (event, items = []) => {
+    renderDynamicNews(items)
+})
+ipcRenderer.on('content-status', (event, status = {}) => {
+    const sourceLabels = { remote: 'remota central', 'legacy-remote': 'remota de compatibilidad', cache: 'cache verificada', packaged: 'incluida en el launcher', 'legacy-local': 'local de emergencia' }
+    logHistory.push(`Contenido: ${status.projects || 0} proyectos y ${status.news || 0} noticias desde fuente ${sourceLabels[status.source] || status.source || 'desconocida'}.`)
+    renderLogHistory()
+})
 ipcRenderer.on('all-servers-info', (event, servers) => {
     currentServers = Array.isArray(servers) ? servers : []
     if (currentServers.length && !selectedProject) { const initialProject = currentServers.find((server) => server.featured) || currentServers[0]; targetServerId = initialProject.id; renderProjectPreview(initialProject) }
@@ -2469,6 +2614,7 @@ ipcRenderer.on('access-granted', (event, data) => {
     renderHeroDetails(project, { isInstalled, isUpdateAvailable, installedVersion, projectVersion })
     renderChangelog(project)
     renderTrailerAvailability(project)
+    renderAccessOptions(project)
     setHeroAccess('Acceso concedido', 'granted')
     const status = getProjectStatus(selectedProject, { isInstalled, isUpdateAvailable, installedVersion, projectVersion })
     setLaunchStatus(isUpdateAvailable ? 'Actualizacion disponible' : isInstalled ? 'Lista para jugar' : 'Lista para instalar', status.mode)
@@ -2584,6 +2730,10 @@ document.getElementById('code-input')?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') window.enviarCodigo()
 })
 document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && introOverlay && !introOverlay.classList.contains('hidden')) {
+        closeIntro()
+        return
+    }
     if (event.ctrlKey && event.key.toLowerCase() === 'f') {
         event.preventDefault()
         document.getElementById('catalog-search')?.focus()
@@ -2600,8 +2750,20 @@ document.addEventListener('keydown', (event) => {
         window.closeTrailer()
         return
     }
+    if (event.key === 'Escape' && downloadCenterModal?.classList.contains('open')) {
+        window.closeDownloadCenter()
+        return
+    }
     if (event.key === 'Escape' && consoleModal?.classList.contains('open')) window.closeConsoleWindow()
     closeInstanceContextMenu()
+})
+
+window.addEventListener('error', (event) => {
+    ipcRenderer.send('renderer-error', `${event.message || 'Error desconocido'} (${event.filename || 'interfaz'}:${event.lineno || 0})`)
+})
+window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason?.stack || event.reason?.message || String(event.reason || 'Promesa rechazada')
+    ipcRenderer.send('renderer-error', reason)
 })
 
 
