@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Obsidian Launcher</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="intro-overlay" id="intro-overlay">
+    <video class="intro-video" id="intro-video" src="../intro2.mp4" autoplay playsinline></video>
+    <button class="intro-skip" id="intro-skip" type="button">Saltar</button>
+    <button class="intro-start" id="intro-start" type="button">Iniciar</button>
+</div>
+<div class="titlebar">
+    <div class="titlebar-brand"><img class="titlebar-logo" src="../56x56-Logo.png" alt="Obsidian Studios"><div class="title" data-i18n="app.title">Obsidian Studios Launcher</div></div>
+    <div class="window-controls"><button onclick="minimize()" title="Minimizar">-</button><button onclick="toggleMaximize()" title="Maximizar">[]</button><button onclick="closeApp()" title="Cerrar">x</button></div>
+</div>
+<div class="accent-strip"></div>
+<div class="app-shell">
+    <aside class="sidebar-nav">
+        <div class="sidebar-profile">
+            <div class="profile-logo-wrap"><img class="brand-logo fallback-profile-logo" src="../56x56-Logo.png" alt="Obsidian Studios"></div>
+            <div class="brand-copy"><strong id="sidebar-profile-name">Obsidian</strong><span id="sidebar-profile-mode" data-i18n="app.network">Studios Network</span></div>
+        </div>
+        <nav class="nav-list">
+                        <button id="tab-home" class="nav-item active" onclick="switchTab('home')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z"/></svg></span><span data-i18n="nav.instances">Instancias</span></button>
+            <button id="tab-news" class="nav-item" onclick="switchTab('news')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM7 8h10v2H7zm0 4h10v2H7zm0 4h6v1.5H7z"/></svg></span><span data-i18n="nav.news">Noticias</span></button>
+            <button id="tab-account" class="nav-item" onclick="switchTab('account')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8c.7-4.2 3.2-6.2 7-6.2s6.3 2 7 6.2z"/></svg></span><span data-i18n="nav.account">Mi Cuenta</span></button>
+            <button id="tab-settings" class="nav-item" onclick="switchTab('settings')"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.8 7.8 0 0 0 .1-1 7.8 7.8 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8.5 8.5 0 0 0-1.7-1L15 3.5h-4L10.7 6A8.5 8.5 0 0 0 9 7L6.6 6l-2 3.4 2 1.5a7.8 7.8 0 0 0-.1 1 7.8 7.8 0 0 0 .1 1l-2 1.5 2 3.4 2.4-1a8.5 8.5 0 0 0 1.7 1l.3 2.6h4l.3-2.6a8.5 8.5 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></span><span data-i18n="nav.settings">Configuracion</span></button>
+            <button id="tab-console" class="nav-item console-nav-button" onclick="openConsoleWindow()"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zm2 2v10h12V7zm2 2 3 3-3 3-1.2-1.2L8.6 12 6.8 10.2zM12 14h5v1.5h-5z"/></svg></span><span data-i18n="nav.console">Consola</span></button><button id="tab-downloads" class="nav-item console-nav-button" onclick="openDownloadCenter()"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v10l4-4 1.4 1.4L12 15.8l-5.4-5.4L8 9l3 3V3h2zM5 18h14v2H5z"/></svg></span><span data-i18n="nav.downloads">Descargas</span></button>        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="support-links"><button onclick="openCommunityDiscord()"><span>DC</span><b data-i18n="support.discord">Discord</b></button><button onclick="openSupport()"><span>FB</span><b data-i18n="support.feedback">Feedback</b></button></div>
+        <div class="sidebar-footer"><img src="../56x56-Logo.png" alt=""><div><strong>OBSIDIAN</strong><span>STUDIOS</span></div></div>
+    </aside>
+    <main class="content-wrapper">
+        <section id="view-home" class="tab-view active">
+            <header class="catalog-header">
+                <div><span class="eyebrow" data-i18n="home.eyebrow">Obsidian Network</span><h1 data-i18n="home.title">Instancias disponibles</h1><p class="page-subtitle" data-i18n="home.subtitle">Selecciona, actualiza y juega tus proyectos privados desde un solo lugar.</p></div>
+                <div class="header-actions">
+                    <div class="sync-pill" data-i18n="status.online">Online</div>
+                    <label class="search-box"><span data-i18n="action.search">Buscar</span><input id="catalog-search" type="search" placeholder="Buscar instancia..." data-i18n-placeholder="search.instance" oninput="filterCatalog(this.value)"></label>
+                </div>
+            </header>
+            <div class="catalog-workspace">
+                <section class="instances-section">
+                    <div class="panel-heading"><div><span class="section-kicker" data-i18n="home.library">Biblioteca</span><h2 data-i18n="home.projects">Proyectos</h2></div><span id="catalog-count">0</span></div>
+                    <div class="sidebar-panel instance-grid" id="instance-grid"><div class="empty-state">Sincronizando catalogo...</div></div>
+                    <div class="access-panel">
+                        <div><strong data-i18n="access.title">Acceso privado</strong><span data-i18n="access.copy">Usa la clave de la instancia seleccionada.</span></div>
+                        <div class="access-actions"><div class="code-box"><input id="code-input" type="password" placeholder="Clave de acceso" data-i18n-placeholder="access.placeholder"><button class="code-submit" onclick="enviarCodigo()" data-i18n="action.unlock">Desbloquear</button></div><button class="utility-button access-refresh" onclick="recheckDiscordAccess()" data-i18n="action.checkRole">Comprobar rol</button></div>
+                    </div>
+                </section>
+                <section class="selected-section">
+                    <div class="hero" id="hero-panel">
+                        <div class="hero-backdrop" id="hero-backdrop" aria-hidden="true"></div>
+                        <div class="hero-topline"><span data-i18n="home.featured">Proyecto destacado</span><span class="hero-access" id="hero-access">Esperando</span></div>
+                        <div class="hero-content"><h2 id="hero-title">Cargando...</h2><p class="meta-tags" id="hero-desc">Sincronizando con el catalogo remoto...</p><div class="hero-details" id="hero-details"></div><div class="changelog-panel"><div class="changelog-heading"><span data-i18n="instance.changes">Cambios de esta version</span><strong id="changelog-version">v--</strong></div><ul id="changelog-list"><li data-i18n="instance.chooseChanges">Selecciona una instancia para ver sus cambios.</li></ul></div></div>
+                        <div class="launch-panel">
+                            <div class="launch-copy"><span data-i18n="instance.status">Estado de la instancia</span><strong id="launch-status-text">Lista para seleccionar</strong></div>
+                            <div class="progress-container"><div class="progress-bar" id="progressBar"></div></div>
+                            <div class="launch-actions"><button class="btn install" onclick="instalar()" data-i18n="action.install">Instalar</button><button class="btn play" onclick="jugar()" data-i18n="action.play">Jugar</button><button class="btn trailer" id="trailer-button" onclick="openTrailer()" data-i18n="action.trailer">Ver trailer</button><button class="btn content" onclick="openInstanceContent()" data-i18n="action.content">Contenido</button><button class="btn kill" onclick="detenerJuego()" data-i18n="action.stop">Detener</button><button class="btn delete-instance" onclick="eliminarInstancia()" data-i18n="action.delete">Eliminar</button></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </section>
+        <section id="view-news" class="tab-view">
+            <header class="catalog-header news-header"><div><span class="eyebrow" data-i18n="news.eyebrow">Obsidian Broadcast</span><h1 data-i18n="news.title">Noticias y anuncios</h1></div></header>
+            <div class="news-layout loading-fade">
+                <article class="news-featured reveal-item" role="button" tabindex="0" onclick="openAnnouncement('client-108')" onkeydown="activateAnnouncement(event, 'client-108')">
+                    <span class="news-date">15 / 08 / 2026</span><div class="news-badge">Launcher</div>
+                    <h2>Obsidian Client v1.0.8</h2>
+                    <p>Correccion del renombrado de skins y mensajes de descarga mas claros para detectar URLs fallidas.</p>
+                    <span class="news-read">Abrir changelog -></span>
+                </article>
+                <div class="news-feed">
+                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('ltdn-update')" onkeydown="activateAnnouncement(event, 'ltdn-update')"><span>23 / 06 / 2026</span><div><strong>La Tierra de Nadie v1.0.1</strong><p>Optimizacion, sistema de voz y correcciones de estabilidad.</p><b>Leer anuncio -></b></div></article>
+                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('restricted-event')" onkeydown="activateAnnouncement(event, 'restricted-event')"><span>20 / 06 / 2026</span><div><strong>Nuevo evento: El Acceso Restringido</strong><p>Una experiencia de rol limitada para miembros autorizados.</p><b>Leer anuncio -></b></div></article>
+                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('discord-server')" onkeydown="activateAnnouncement(event, 'discord-server')"><span>12 / 06 / 2026</span><div><strong>Nuevo servidor de Discord</strong><p>Los accesos por rol ahora se validan en la nueva comunidad de Obsidian Studios.</p><b>Leer anuncio -></b></div></article>
+                    <article class="news-item reveal-item" role="button" tabindex="0" onclick="openAnnouncement('automatic-java')" onkeydown="activateAnnouncement(event, 'automatic-java')"><span>03 / 06 / 2026</span><div><strong>Java automatico</strong><p>El launcher descarga el runtime necesario para cada version de Minecraft.</p><b>Leer anuncio -></b></div></article>
+                </div>
+            </div>
+        </section>
+        <section id="view-account" class="tab-view">
+            <header class="catalog-header account-header"><div><span class="eyebrow" data-i18n="account.kicker">Perfil de usuario</span><h1 data-i18n="account.title">Mi Cuenta</h1><p class="page-subtitle" data-i18n="account.subtitle">Tu identidad, skin y conexiones.</p></div></header>
+            <div class="account-grid account-profile-grid">
+                <section class="account-card identity-card skin-studio-card">
+                    <div class="skin-panel">
+                        <div class="skin-preview" id="skin-preview">SKIN</div>
+                        <div class="skin-controls"><select class="select-field" id="skin-animation" onchange="updateSkinAnimation(this.value)"><option value="walk" data-i18n="skin.walk">Caminar</option><option value="idle" data-i18n="skin.idle">Reposo</option><option value="run" data-i18n="skin.run">Correr</option><option value="wave" data-i18n="skin.wave">Saludar</option><option value="fly" data-i18n="skin.fly">Volar</option><option value="none" data-i18n="skin.none">Sin animacion</option></select></div>
+                    </div>
+                    <div class="identity-copy">
+                        <span class="eyebrow" data-i18n="account.minecraftProfile">Perfil de Minecraft</span><h2 id="minecraft-name">PlayerTest</h2><p id="minecraft-mode">Modo offline</p>
+                        <div class="microsoft-sync-status" id="microsoft-sync-status" data-state="offline"><span class="sync-dot"></span><div><strong>Microsoft no sincronizado</strong><small>Inicia sesion para usar tu cuenta premium.</small></div></div>
+                        <div class="appearance-summary"><div><span data-i18n="skin.current">Skin mostrada</span><strong id="skin-source-label" data-i18n="skin.default">Predeterminada</strong><small id="cape-source-label">Sin capa activa</small></div><button class="btn-secondary primary appearance-open-button" onclick="openAppearanceManager()" data-i18n="appearance.open">Seleccionar skin</button></div>
+                        <div class="profile-account-actions"><button class="btn-secondary" onclick="loginMinecraftPremium()" data-i18n="account.microsoftLogin">Iniciar Microsoft</button><button class="btn-secondary" onclick="logoutMinecraft()" data-i18n="account.offlineMode">Modo offline</button></div>
+                        <div class="profile-badges" id="profile-badges"><span>Offline</span><span>Skin local</span><span>Sin capa</span></div>
+                        <input id="skin-url" type="hidden"><label class="compact-profile-field"><span data-i18n="account.offlineName">Nombre offline</span><span><input class="text-field" id="minecraft-username" type="text" value="PlayerTest" maxlength="16"><button class="btn-secondary" onclick="saveMinecraftProfile()" data-i18n="account.saveProfile">Guardar</button></span></label>
+                    </div>
+                </section>
+                <section class="account-card discord-card"><span class="section-kicker" data-i18n="account.integration">Integracion</span><h3>Discord</h3><div class="profile-row"><div class="discord-avatar" id="discord-avatar">DC</div><div><strong id="username">Sin vincular</strong><p id="discord-status">Usa tu navegador para iniciar sesion.</p></div></div><div class="buttons compact"><button class="btn-secondary discord-action" onclick="loginDiscord()" data-i18n="account.linkDiscord">Vincular Discord</button><button class="btn-secondary" onclick="logoutDiscord()" data-i18n="account.closeDiscord">Cerrar Discord</button></div></section>
+                <section class="account-card playtime-card"><span class="section-kicker" data-i18n="account.activity">Actividad</span><h3 data-i18n="account.playtime">Tiempo jugado</h3><div class="playtime-list" id="playtime-list"><div class="playtime-empty">Todavia no hay sesiones registradas.</div></div></section>
+            </div>
+        </section>
+        <section id="view-settings" class="tab-view">
+            <header class="catalog-header settings-header"><div><span class="eyebrow" data-i18n="settings.kicker">Preferencias del launcher</span><h1 data-i18n="settings.title">Configuracion</h1><p class="page-subtitle" data-i18n="settings.subtitle">Ajusta rendimiento, idioma y actualizaciones.</p></div></header>
+            <div class="settings-grid">
+                <section class="account-card ram-card settings-wide"><span class="section-kicker" data-i18n="account.performance">Rendimiento</span><div class="settings-card-heading"><div><h3 data-i18n="account.ram">Memoria RAM</h3><p data-i18n="settings.ramCopy">Memoria maxima que Minecraft puede utilizar.</p></div><div class="ram-value-display"><strong id="ram-value">4</strong><span>GB</span></div></div><div class="ram-selector"><input type="range" min="2" max="16" step="1" id="ram-slider" value="4" oninput="updateRamValue(this.value)"><div class="ram-ticks"><span>2 GB</span><span data-i18n="settings.ramRecommended">Recomendado: 6-8 GB</span><span id="ram-max-label">16 GB</span></div></div><div class="settings-note" id="ram-system-note">Detectando memoria del equipo...</div></section>
+                <section class="account-card language-card"><span class="section-kicker" data-i18n="account.languageKicker">Preferencias</span><h3 data-i18n="account.languageTitle">Idioma</h3><p class="language-copy" data-i18n="account.languageCopy">Elige el idioma principal del launcher.</p><div class="account-language-list" id="account-language-list"></div></section>                <section class="account-card minecraft-defaults-card settings-wide"><span class="section-kicker" data-i18n="settings.minecraftDefaultsKicker">Minecraft</span><div class="settings-card-heading"><div><h3 data-i18n="settings.minecraftDefaultsTitle">Minecraft In-Game Default Settings</h3><p data-i18n="settings.minecraftDefaultsCopy">Opciones base que el launcher aplicara a las instancias instaladas.</p></div><label class="switch-row compact-switch"><span data-i18n="settings.enabled">Activo</span><input id="mc-defaults-enabled" type="checkbox" data-mc-option="enabled" onchange="updateMinecraftDefaultSettings()"><i></i></label></div><div class="minecraft-defaults-layout"><section><h4 data-i18n="settings.videoSettings">Video Settings</h4><label class="toggle-setting"><span>Full-Screen</span><input type="checkbox" data-mc-option="fullscreen" onchange="updateMinecraftDefaultSettings()"><i></i></label><label class="toggle-setting"><span>View Bobbing</span><input type="checkbox" data-mc-option="viewBobbing" onchange="updateMinecraftDefaultSettings()"><i></i></label><label class="range-setting"><span>GUI Scale <b data-mc-value="guiScale">3</b></span><input type="range" min="1" max="4" step="1" data-mc-option="guiScale" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Gamma <b data-mc-value="gamma">50</b></span><input type="range" min="0" max="100" step="1" data-mc-option="gamma" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Render Distance <b data-mc-value="renderDistance">12</b></span><input type="range" min="2" max="32" step="1" data-mc-option="renderDistance" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>FOV <b data-mc-value="fov">105</b></span><input type="range" min="30" max="110" step="1" data-mc-option="fov" oninput="updateMinecraftDefaultSettings()"></label></section><section><h4 data-i18n="settings.controlSettings">Control Settings</h4><label class="toggle-setting"><span>Auto-Jump</span><input type="checkbox" data-mc-option="autoJump" onchange="updateMinecraftDefaultSettings()"><i></i></label><label class="toggle-setting"><span>Invert Mouse</span><input type="checkbox" data-mc-option="invertMouse" onchange="updateMinecraftDefaultSettings()"><i></i></label><label class="range-setting"><span>Mouse Sensitivity <b data-mc-value="mouseSensitivity">100</b></span><input type="range" min="0" max="200" step="1" data-mc-option="mouseSensitivity" oninput="updateMinecraftDefaultSettings()"></label></section><section class="sound-settings"><h4 data-i18n="settings.soundSettings">Sound Settings</h4><label class="range-setting"><span>Master Volume <b data-mc-value="soundMaster">100</b></span><input type="range" min="0" max="100" data-mc-option="soundMaster" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Music <b data-mc-value="soundMusic">0</b></span><input type="range" min="0" max="100" data-mc-option="soundMusic" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Jukebox/Note Blocks <b data-mc-value="soundRecord">100</b></span><input type="range" min="0" max="100" data-mc-option="soundRecord" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Weather <b data-mc-value="soundWeather">100</b></span><input type="range" min="0" max="100" data-mc-option="soundWeather" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Blocks <b data-mc-value="soundBlock">100</b></span><input type="range" min="0" max="100" data-mc-option="soundBlock" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Hostile Creatures <b data-mc-value="soundHostile">100</b></span><input type="range" min="0" max="100" data-mc-option="soundHostile" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Friendly Creatures <b data-mc-value="soundFriendly">100</b></span><input type="range" min="0" max="100" data-mc-option="soundFriendly" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Players <b data-mc-value="soundPlayer">100</b></span><input type="range" min="0" max="100" data-mc-option="soundPlayer" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Ambient/Environment <b data-mc-value="soundAmbient">0</b></span><input type="range" min="0" max="100" data-mc-option="soundAmbient" oninput="updateMinecraftDefaultSettings()"></label><label class="range-setting"><span>Voice/Speech <b data-mc-value="soundVoice">93</b></span><input type="range" min="0" max="100" data-mc-option="soundVoice" oninput="updateMinecraftDefaultSettings()"></label></section></div><div class="settings-actions"><button class="btn-secondary primary" onclick="saveMinecraftDefaultSettings()" data-i18n="settings.saveMinecraftDefaults">Guardar ajustes</button><button class="btn-secondary" onclick="resetMinecraftDefaultSettings()" data-i18n="settings.resetMinecraftDefaults">Restablecer</button></div></section>
+                <section class="account-card diagnostic-card settings-wide"><span class="section-kicker" data-i18n="diagnostic.kicker">Soporte</span><div class="settings-card-heading"><div><h3 data-i18n="diagnostic.title">Diagnostico</h3><p data-i18n="diagnostic.copy">Genera un informe rapido para soporte cuando algo no funciona.</p></div><button class="btn-secondary primary" onclick="copyDiagnosticReport()" data-i18n="diagnostic.copyReport">Copiar informe</button></div><div class="diagnostic-grid" id="diagnostic-grid"><div class="diagnostic-empty">Cargando diagnostico...</div></div></section><section class="account-card downloads-card"><span class="section-kicker" data-i18n="downloads.kicker">Actividad</span><h3 data-i18n="downloads.title">Centro de descargas</h3><p data-i18n="downloads.copy">Mira el progreso, velocidad y archivos procesados durante instalaciones.</p><div class="download-mini" id="download-mini"><strong data-i18n="downloads.idle">Sin descargas activas</strong><span>0%</span></div><button class="btn-secondary" onclick="openDownloadCenter()" data-i18n="downloads.open">Abrir centro</button></section><section class="account-card launcher-version-card"><span class="section-kicker">Launcher</span><h3 data-i18n="account.currentVersion">Version actual</h3><div class="launcher-version-display"><strong id="launcher-current-version">v--</strong><span id="launcher-version-state">Instalacion actual</span></div><p data-i18n="settings.updateCopy">Busca nuevas versiones del launcher y cambios del catalogo.</p><div class="account-tools"><button class="btn-secondary primary" onclick="checkVersions()" data-i18n="account.checkVersions">Comprobar versiones</button></div></section>
+                <section class="account-card settings-about-card"><span class="section-kicker">Obsidian Studios</span><h3 data-i18n="settings.supportTitle">Ayuda y comunidad</h3><p data-i18n="settings.supportCopy">Reporta errores o entra a la comunidad oficial.</p><div class="buttons compact"><button class="btn-secondary" onclick="openCommunityDiscord()">Discord</button><button class="btn-secondary" onclick="openSupport()" data-i18n="support.feedback">Feedback</button></div></section>
+            </div>
+        </section>
+</main>
+</div>
+
+<div class="console-modal" id="console-modal" aria-hidden="true">
+    <div class="console-backdrop" onclick="closeConsoleWindow()"></div>
+    <article class="logs-window console-window" id="logs-window" role="dialog" aria-modal="true" aria-labelledby="console-title">
+        <div class="logs-header">
+            <button class="logs-title" onclick="toggleLogPanel()"><span id="console-title" data-i18n="console.title">System Console</span><strong id="log-count">1 linea</strong></button>
+            <div class="logs-tools">
+                <label class="log-search"><span data-i18n="action.search">Buscar</span><input id="log-search" type="search" placeholder="Filtrar log..." data-i18n-placeholder="console.filter" oninput="searchLogContent(this.value)"></label>
+                <button class="log-action" id="copy-log-btn" onclick="copyLogContent()" data-i18n="console.copy">Copiar</button>
+                <button class="log-action" onclick="clearLogContent()" data-i18n="console.clear">Limpiar</button>
+                <button class="log-action" id="toggle-log-btn" onclick="toggleLogPanel()" data-i18n="console.close">Cerrar</button>
+            </div>
+        </div>
+        <div class="logs-body" id="log">Inicializando componentes base del entorno...</div>
+    </article>
+</div>
+<div class="onboarding-modal" id="onboarding-modal" aria-hidden="true">
+    <div class="onboarding-backdrop"></div>
+    <article class="onboarding-dialog">
+        <div class="onboarding-brand"><img src="../56x56-Logo.png" alt=""><div><span>Obsidian Studios</span><strong data-i18n="onboarding.title">Configura tu launcher</strong></div></div>
+        <p class="onboarding-copy" data-i18n="onboarding.copy">Elige tu idioma e inicia sesion con Microsoft o Discord para desbloquear instancias privadas.</p>
+        <div class="language-choice" role="group" aria-label="Language">
+            <button class="language-option" id="lang-es" onclick="setLanguage('es')">Espanol</button>
+            <button class="language-option" id="lang-en" onclick="setLanguage('en')">English</button>
+        </div>
+        <div class="onboarding-actions">
+            <button class="btn-secondary primary" onclick="startMicrosoftFromOnboarding()" data-i18n="onboarding.microsoft">Iniciar con Microsoft</button>
+            <button class="btn-secondary discord-action" onclick="startDiscordFromOnboarding()" data-i18n="onboarding.discord">Vincular Discord</button>
+        </div>
+        <button class="bug-link" onclick="openBugDiscord()" data-i18n="onboarding.bugs">Reporta cualquier bug en nuestro Discord</button>
+        <div class="onboarding-footer"><button class="btn-secondary" onclick="finishOnboarding()" data-i18n="onboarding.continue">Continuar</button></div>
+    </article>
+</div>
+<div class="launcher-update-modal" id="launcher-update-modal" aria-hidden="true">
+    <div class="launcher-update-backdrop" onclick="closeLauncherUpdate()"></div>
+    <article class="launcher-update-dialog">
+        <button class="launcher-update-close" onclick="closeLauncherUpdate()" title="Cerrar">x</button>
+        <span class="launcher-update-label">Actualizacion del launcher</span>
+        <h2 id="launcher-update-title">Nueva version disponible</h2>
+        <p id="launcher-update-body">Hay una nueva version de Obsidian Studios Launcher lista para descargar.</p>
+        <ul class="launcher-update-changelog" id="launcher-update-changelog"></ul>
+        <div class="launcher-update-progress" id="launcher-update-progress" hidden><div><span id="launcher-update-progress-label">Preparando descarga...</span><strong id="launcher-update-progress-percent">0%</strong></div><div class="launcher-update-progress-track"><i id="launcher-update-progress-bar"></i></div></div><div class="launcher-update-actions"><button class="btn play" id="launcher-update-download-btn" onclick="downloadLauncherUpdate()">Descargar e instalar</button><button class="btn-secondary" id="launcher-update-later-btn" onclick="closeLauncherUpdate()">Luego</button></div>
+    </article>
+</div>
+<div class="announcement-modal" id="announcement-modal" aria-hidden="true">
+    <div class="announcement-backdrop" onclick="closeAnnouncement()"></div>
+    <article class="announcement-dialog">
+        <button class="announcement-close" onclick="closeAnnouncement()" title="Cerrar">x</button>
+        <span class="announcement-date" id="announcement-date"></span>
+        <span class="announcement-label" id="announcement-label">Anuncio</span>
+        <img class="announcement-image" id="announcement-image" alt="" hidden>
+        <h2 id="announcement-title"></h2>
+        <p id="announcement-body"></p>
+        <div class="announcement-actions"><button class="news-action" id="announcement-action" onclick="runAnnouncementAction()">Ver instancia</button><button class="btn-secondary" onclick="closeAnnouncement()">Cerrar</button></div>
+    </article>
+</div>
+<div class="instance-content-modal" id="instance-content-modal" aria-hidden="true">
+    <div class="instance-content-backdrop" onclick="closeInstanceContent()"></div>
+    <article class="instance-content-dialog" role="dialog" aria-modal="true" aria-labelledby="instance-content-title">
+        <header class="instance-content-header"><div><span class="eyebrow" data-i18n="content.kicker">Biblioteca de instancia</span><h2 id="instance-content-title">Contenido</h2><p id="instance-content-subtitle" data-i18n="content.subtitle">Activa, desactiva o agrega archivos sin abrir carpetas manualmente.</p></div><button class="appearance-close" onclick="closeInstanceContent()" title="Cerrar" aria-label="Cerrar">x</button></header>        <div class="instance-content-toolbar content-toolbar-modern"><label class="content-search"><span data-i18n="action.search">Buscar</span><input id="instance-content-search" type="search" placeholder="Buscar archivo..." data-i18n-placeholder="content.search" oninput="filterInstanceContent(this.value)"></label><button class="btn-secondary" onclick="openSelectedInstanceFolder()" data-i18n="content.files">Archivos</button><button class="btn-secondary" onclick="addInstanceContent(currentContentTab)" data-i18n="content.addCurrent">Agregar</button><button class="btn-secondary" onclick="refreshInstanceContent()" data-i18n="content.refresh">Actualizar lista</button></div>
+        <div class="instance-content-tabs" id="instance-content-tabs"><button class="active" data-tab="mods" onclick="setInstanceContentTab('mods')">Mods <b>0</b></button><button data-tab="resourcepacks" onclick="setInstanceContentTab('resourcepacks')">Texturas <b>0</b></button><button data-tab="shaders" onclick="setInstanceContentTab('shaders')">Shaders <b>0</b></button><button data-tab="config" onclick="setInstanceContentTab('config')">Config <b>0</b></button></div>
+        <div class="instance-content-list tabbed" id="instance-content-list"></div>
+        <footer class="appearance-footer"><span id="instance-content-status" data-i18n="content.ready">Selecciona un archivo para cambiar su estado.</span><button class="btn-secondary" onclick="closeInstanceContent()" data-i18n="appearance.done">Listo</button></footer>
+    </article>
+</div><div class="instance-context-menu" id="instance-context-menu" aria-hidden="true"></div><div class="appearance-modal" id="appearance-modal" aria-hidden="true">
+    <div class="appearance-backdrop" onclick="closeAppearanceManager()"></div>
+    <article class="appearance-dialog" role="dialog" aria-modal="true" aria-labelledby="appearance-title">
+        <header class="appearance-header"><div><span class="eyebrow" data-i18n="appearance.kicker">Personalizacion</span><h2 id="appearance-title" data-i18n="appearance.title">Tu apariencia</h2><p data-i18n="appearance.subtitle">Cambia de skin y administra tus capas oficiales sin salir del launcher.</p></div><button class="appearance-close" onclick="closeAppearanceManager()" title="Cerrar" aria-label="Cerrar">x</button></header>
+        <div class="appearance-body appearance-library-body">
+            <aside class="appearance-preview-pane">
+                <div class="appearance-viewer" id="appearance-viewer"></div>
+                <div class="appearance-preview-copy"><span data-i18n="appearance.preview">Vista previa</span><strong id="appearance-preview-name">PlayerTest</strong><small id="appearance-preview-detail">Skin actual - Sin capa</small></div>
+                <label class="appearance-animation-field"><span data-i18n="appearance.animation">Animacion</span><select class="select-field" id="appearance-animation" onchange="updateAppearanceAnimation(this.value)"><option value="idle" data-i18n="skin.idle">Reposo</option><option value="walk" data-i18n="skin.walk">Caminar</option><option value="run" data-i18n="skin.run">Correr</option><option value="wave" data-i18n="skin.wave">Saludar</option></select></label>
+                <button class="btn-secondary primary appearance-apply-button" id="appearance-apply-button" onclick="applyAppearanceSelection()" data-i18n="appearance.applySelection">Aplicar seleccion</button>
+            </aside>
+            <div class="appearance-catalog">
+                <section class="appearance-current"><canvas id="appearance-current-head" width="88" height="88"></canvas><div><span data-i18n="appearance.active">Apariencia activa</span><strong id="appearance-current-name">PlayerTest</strong><small id="appearance-current-detail">Skin predeterminada - Sin capa</small></div><button class="appearance-refresh" onclick="refreshAppearanceProfile()" data-i18n="appearance.refresh">Actualizar perfil</button></section>
+                <section class="appearance-section"><div class="appearance-section-heading"><div><span>Skins</span><h3 data-i18n="appearance.mySkins">Mis skins</h3></div><label class="appearance-model-field"><span data-i18n="skin.model">Modelo de brazos</span><select class="select-field" id="appearance-skin-variant" onchange="updateAppearanceVariant(this.value)"><option value="classic" data-i18n="skin.classic">Clasico (Steve)</option><option value="slim" data-i18n="skin.slim">Delgado (Alex)</option></select></label></div><div class="skin-library-grid" id="skin-library-grid"></div></section>
+                <section class="appearance-section appearance-category" data-category="defaults"><div class="appearance-section-heading"><div><span>Minecraft</span><h3 data-i18n="appearance.defaultSkins">Skins predeterminadas</h3></div><small data-i18n="appearance.defaultSkinsHint">Personajes clasicos incluidos con Minecraft.</small></div><div class="skin-library-grid default-skin-grid" id="default-skin-grid"></div></section>
+                <section class="appearance-section"><div class="appearance-section-heading"><div><span>Minecraft</span><h3 data-i18n="appearance.capes">Capas oficiales</h3></div><small data-i18n="appearance.capesHint">Solo aparecen las capas asociadas a tu cuenta Microsoft.</small></div><div class="cape-library-grid" id="cape-library-grid"></div></section>
+            </div>
+        </div>
+        <footer class="appearance-footer"><span id="appearance-status" data-i18n="appearance.ready">Elige una apariencia para aplicarla.</span><button class="btn-secondary" onclick="closeAppearanceManager()" data-i18n="appearance.done">Listo</button></footer>
+    </article>
+</div>
+<div class="trailer-modal" id="trailer-modal" aria-hidden="true">
+    <div class="trailer-backdrop" onclick="closeTrailer()"></div>
+    <div class="trailer-dialog">
+        <div class="trailer-header"><div><span>Obsidian Cinema</span><strong id="trailer-title">Trailer</strong></div><div class="trailer-header-actions"><button class="trailer-external" onclick="openTrailerExternal()" title="Abrir en navegador">Abrir</button><button onclick="closeTrailer()" title="Cerrar">x</button></div></div>
+        <div class="trailer-media" id="trailer-media"></div>
+    </div>
+</div>
+<div class="download-center-modal" id="download-center-modal" aria-hidden="true">
+    <div class="download-center-backdrop" onclick="closeDownloadCenter()"></div>
+    <article class="download-center-dialog" role="dialog" aria-modal="true" aria-labelledby="download-center-title">
+        <header class="download-center-header">
+            <div><span class="section-kicker" data-i18n="downloads.kicker">Actividad</span><h2 id="download-center-title" data-i18n="downloads.title">Centro de descargas</h2><p id="download-phase">Sin descargas activas</p></div>
+            <button class="appearance-close" onclick="closeDownloadCenter()" title="Cerrar" aria-label="Cerrar">x</button>
+        </header>
+        <div class="download-center-body">
+            <div class="download-now"><div><span>Descarga actual</span><strong id="download-title">Sin descargas activas</strong></div><b id="download-percent">0%</b></div>
+            <div class="download-track"><i id="download-bar"></i></div>
+            <div class="download-stats"><span id="download-files">Archivos 0 / 0</span><span id="download-size">0 B / 0 B</span><span id="download-speed">Velocidad: 0 B/s</span><span id="download-eta">Tiempo restante: --:--</span></div>
+            <div class="download-breakdown" id="download-breakdown"><span>Mods 0 / 0</span><span>Texturas 0 / 0</span><span>Configuraciones 0 / 0</span></div>
+            <div class="download-actions"><button class="btn-secondary" onclick="pauseDownloadCenter()" data-i18n="downloads.pause">Pausar</button><button class="btn-secondary" onclick="resumeDownloadCenter()" data-i18n="downloads.resume">Reanudar</button><button class="btn-secondary danger" onclick="cancelDownloadCenter()" data-i18n="downloads.cancel">Cancelar</button></div>
+        </div>
+    </article>
+</div>
+<div class="toast-stack" id="toast-stack"></div>
+<script src="../node_modules/skinview3d/bundles/skinview3d.bundle.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>
+
+
+

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ltdn",
+    "name": "La tierra de Nadie",
+    "description": "SMP con mods y amigos.",
+    "project_version": "1.0.0",
+    "minecraft_version": "1.21.8",
+    "loader": "neoforge",
+    "loader_version": "21.8.53",
+    "modpack_url": "https://github.com/Pizzha541/testmodpack/releases/download/1.0.1/Nueva.carpeta.2.zip",
+    "bg_image": "https://cms-assets.xboxservices.com/assets/53/6f/536f3aa5-424d-487a-a90c-957f93b32c17.jpg?n=Minecraft_Sneaky-Slider-1084_Ultimate-Collection_1600x675.jpg",
+    "discord_role_id": "1511851694143705271"
+  },
+  {
+    "id": "proyecto_lore2",
+    "name": "El Acceso Restringido",
+    "description": "minievento de rol.",
+    "project_version": "1.0.0",
+    "minecraft_version": "1.20.1",
+    "loader": "forge",
+    "loader_version": "47.4.10",
+    "modpack_url": "https://github.com/Pizzha541/testmodpack/releases/download/rol/ulisesrol.zip",
+    "bg_image": "https://files.catbox.moe/xp4jjv.png",
+    "discord_role_id": "1504252146068095017"
+  }
+]

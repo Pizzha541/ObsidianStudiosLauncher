@@ -1,0 +1,83 @@
+{
+  "name": "obsidian-launcher",
+  "version": "1.0.9",
+  "description": "Launcher de Obsidian Studios",
+  "productName": "Obsidian Studios Launcher",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check main.js && node --check src/renderer.js",
+    "dist": "electron-builder --win nsis"
+  },
+  "keywords": [],
+  "author": "Pizzha",
+  "license": "MIT",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pizzha541/ObsidianStudiosLauncher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Pizzha541/ObsidianStudiosLauncher/issues"
+  },
+  "homepage": "https://github.com/Pizzha541/ObsidianStudiosLauncher#readme",
+  "build": {
+    "appId": "com.obsidianstudios.launcher",
+    "productName": "Obsidian Studios Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "src/**/*",
+      "data/**/*",
+      "intro.mp4",
+      "intro2.mp4",
+      "56x56-Logo.png",
+      "icono.ico",
+      "package.json"
+    ],
+    "win": {
+      "icon": "icono.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "extraFiles": [
+      {
+        "from": "icono.ico",
+        "to": "icono.ico"
+      }
+    ],
+    "nsis": {
+      "include": "build/installer.nsh",
+      "installerIcon": "icono.ico",
+      "uninstallerIcon": "icono.ico",
+      "installerHeaderIcon": "icono.ico",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Obsidian Studios Launcher"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "axios": "^1.16.1",
+    "extract-zip": "^2.0.1",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.5",
+    "skinview3d": "^3.4.2"
+  }
+}

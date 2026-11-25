@@ -1,0 +1,39 @@
+# Dependencias
+node_modules/
+
+# Compilaciones y archivos temporales
+dist/
+tmp/
+out/
+release/
+*.log
+*.blockmap
+latest*.yml
+
+# Configuracion local y secretos
+.env
+.env.*
+!.env.example
+data/session.json
+data/minecraft-profile.json
+data/local-instances.json
+data/local-packs/
+data/local-images/
+data/profile-skins/
+
+# Editores y sistema operativo
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Metadatos locales de agentes
+.agents/
+.codex/
+
+# Documentacion interna y manifiestos historicos locales
+docs/
+
+# Recursos antiguos que no forman parte del launcher actual
+Minecraft.ttf
+neoforge-*-installer.jar.log
