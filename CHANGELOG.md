@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0 - 2026-11-25
+
+### Nuevo
+
+- Instancias vuelve a ser la pantalla principal con la identidad grafito y violeta de la 1.1.0.
+- Estado compacto de Catálogo, Microsoft y Discord dentro de Instancias.
+- Prueba visual offscreen para comprobar el diseño sin mostrar la aplicación.
+
+### Mejorado
+
+- Nueva identidad visual grafito y violeta con superficies más limpias, proporciones compactas y diseño adaptable.
+- Diagnóstico explicado como una comprobación del equipo con estados claros y un informe seguro para soporte.
+- Iconos en controles de ventana, Discord, comunidad y feedback.
+- Cerrar o actualizar el Launcher ya no detiene una sesión de Minecraft en ejecución.
+- Biblioteca de instancias con desplazamiento independiente, filtros desplegables y tarjetas compactas.
+- Acciones simplificadas: Jugar cambia a Parar, Ver tráiler permanece visible y Contenido/Carpeta están en el menú contextual.
+- Corrección de los botones contextuales y del texto animado `Instalando`.
+
 ## 1.0.9 - 2026-11-24
 
 ### Nuevo

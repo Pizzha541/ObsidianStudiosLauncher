@@ -57,7 +57,15 @@ No incluyas contrasenas, tokens ni claves privadas en el repositorio. Los campos
 - `intro.mp4` y `intro2.mp4`: secuencias de introduccion del launcher.
 - `docs/`: auditoria y procedimiento de preparacion/publicacion de la 1.0.9.
 
-## Version 1.0.9
+## Versión 1.1.0
+
+La versión pública estable es la 1.1.0. Incluye el rediseño de Instancias, navegación simplificada, acciones contextuales corregidas y la separación entre el cierre del Launcher y Minecraft.
+
+## Créditos visuales
+
+- Icono de Discord del paquete de Vanessa Benevento ([Wento](https://wento.itch.io/)); licencia incluida en `src/assets/social/wento-license-rights.txt`.
+
+## Documentación técnica 1.0.9
 
 Consulta [la auditoria tecnica](docs/AUDIT-1.0.9.md), [el procedimiento de release](docs/RELEASE-1.0.9.md) y [el changelog](CHANGELOG.md). El backup inicial verificado se conserva fuera del repositorio en `D:\Escritorio\BACKUP_OBSIDIAN_LAUNCHER_v1.0.8`.
 

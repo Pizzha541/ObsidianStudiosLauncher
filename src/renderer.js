@@ -15,10 +15,12 @@ let skinViewer = null
 let appearanceSkinViewer = null
 let detectedCapeUrl = ''
 let currentServers = []
+let lastContentStatus = {}
 let catalogFilter = ''
 let catalogAccessFilter = 'all'
 let catalogStateFilter = 'all'
 let catalogSort = 'featured'
+let pendingCardAction = null
 let accessRequestId = 0
 let pendingAccess = null
 let localProjects = []
@@ -126,6 +128,13 @@ const downloadBreakdown = document.getElementById('download-breakdown')
 const downloadPauseButton = document.getElementById('download-pause-btn')
 const downloadResumeButton = document.getElementById('download-resume-btn')
 const downloadCancelButton = document.getElementById('download-cancel-btn')
+const serviceStrip = document.getElementById('service-strip')
+const catalogServiceStatus = document.getElementById('catalog-service-status')
+const microsoftServiceStatus = document.getElementById('microsoft-service-status')
+const discordServiceStatus = document.getElementById('discord-service-status')
+const catalogFilterDrawer = document.getElementById('catalog-filter-drawer')
+const catalogFilterToggle = document.getElementById('catalog-filter-toggle')
+const catalogFilterCount = document.getElementById('catalog-filter-count')
 const onboardingModal = document.getElementById('onboarding-modal')
 const accountLanguageList = document.getElementById('account-language-list')
 const microsoftSyncStatus = document.getElementById('microsoft-sync-status')
@@ -227,9 +236,9 @@ const translations = {
         'nav.console': 'Consola',
         'nav.downloads': 'Descargas',
         'diagnostic.kicker': 'Soporte',
-        'diagnostic.title': 'Diagnostico',
-        'diagnostic.copy': 'Genera un informe rapido para soporte cuando algo no funciona.',
-        'diagnostic.copyReport': 'Copiar informe',
+        'diagnostic.title': 'Comprobación del equipo',
+        'diagnostic.copy': 'Revisa Java, memoria, instalación, conexión, cuenta y acceso de la instancia seleccionada.',
+        'diagnostic.copyReport': 'Copiar para soporte',
         'downloads.kicker': 'Actividad',
         'downloads.title': 'Centro de descargas',
         'downloads.copy': 'Mira progreso, velocidad y archivos procesados durante instalaciones.',
@@ -320,8 +329,8 @@ const translations = {
         'appearance.renamePrompt': 'Nuevo nombre para la skin:',
         'appearance.renamed': 'Nombre de la skin actualizado.',
         'appearance.applying': 'Aplicando cambios...',
-        'home.title': 'Instancias disponibles',
-        'home.subtitle': 'Selecciona, actualiza y juega tus proyectos privados desde un solo lugar.',
+        'home.title': 'Instancias',
+        'home.subtitle': 'Gestiona, actualiza y juega desde un solo lugar.',
         'home.library': 'Biblioteca',
         'home.projects': 'Proyectos',
         'home.featured': 'Proyecto destacado',
@@ -333,7 +342,7 @@ const translations = {
         'account.languageCopy': 'Elige el idioma principal del launcher. Si se agregan mas idiomas, apareceran aqui automaticamente.',
         'action.install': 'Instalar',
         'action.play': 'Jugar',
-        'action.stop': 'Detener',
+        'action.stop': 'Parar',
         'action.delete': 'Eliminar',
         'action.trailer': 'Ver trailer',
         'action.content': 'Contenido',
@@ -416,9 +425,9 @@ const translations = {
         'nav.console': 'Console',
         'nav.downloads': 'Downloads',
         'diagnostic.kicker': 'Support',
-        'diagnostic.title': 'Diagnostics',
-        'diagnostic.copy': 'Generate a quick support report when something is not working.',
-        'diagnostic.copyReport': 'Copy report',
+        'diagnostic.title': 'Computer check',
+        'diagnostic.copy': 'Checks Java, memory, installation, connection, account and access for the selected instance.',
+        'diagnostic.copyReport': 'Copy for support',
         'downloads.kicker': 'Activity',
         'downloads.title': 'Download center',
         'downloads.copy': 'Track progress, speed, and processed files during installations.',
@@ -509,8 +518,8 @@ const translations = {
         'appearance.renamePrompt': 'New name for the skin:',
         'appearance.renamed': 'Skin name updated.',
         'appearance.applying': 'Applying changes...',
-        'home.title': 'Available instances',
-        'home.subtitle': 'Select, update, and play your private projects from one clean launcher.',
+        'home.title': 'Instances',
+        'home.subtitle': 'Manage, update, and play from one place.',
         'home.library': 'Library',
         'home.projects': 'Projects',
         'home.featured': 'Featured project',
@@ -673,13 +682,14 @@ function renderDiscordState(user = lastDiscordUser) {
         name.innerText = currentLanguage === 'en' ? 'Not linked' : 'Sin vincular'
         status.innerText = currentLanguage === 'en' ? 'Use your browser to sign in.' : 'Usa tu navegador para iniciar sesion.'
         avatar.style.backgroundImage = ''
-        avatar.innerText = 'DC'
+        avatar.innerText = ''
+        avatar.classList.add('uses-default-icon')
         return
     }
     name.innerText = user.global_name || user.username
     status.innerText = currentLanguage === 'en' ? 'Linked through your browser.' : 'Vinculado desde el navegador.'
-    if (user.avatarUrl) { avatar.style.backgroundImage = `url('${user.avatarUrl}')`; avatar.innerText = '' }
-    else { avatar.style.backgroundImage = ''; avatar.innerText = 'DC' }
+    if (user.avatarUrl) { avatar.style.backgroundImage = `url('${user.avatarUrl}')`; avatar.innerText = ''; avatar.classList.remove('uses-default-icon') }
+    else { avatar.style.backgroundImage = ''; avatar.innerText = ''; avatar.classList.add('uses-default-icon') }
 }
 
 
@@ -803,6 +813,22 @@ function formatNewsDate(value) {
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return ''
     return new Intl.DateTimeFormat(currentLanguage === 'en' ? 'en-US' : 'es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
+}
+
+function setServiceState(node, statusNode, state, label) {
+    if (node) node.dataset.state = state
+    if (statusNode) statusNode.innerText = label
+}
+
+function renderServiceStatus() {
+    if (!serviceStrip) return
+    const catalogNode = serviceStrip.querySelector('[data-service="catalog"]')
+    const microsoftNode = serviceStrip.querySelector('[data-service="microsoft"]')
+    const discordNode = serviceStrip.querySelector('[data-service="discord"]')
+    const hasCatalog = currentServers.length > 0
+    setServiceState(catalogNode, catalogServiceStatus, hasCatalog ? 'ok' : lastContentStatus.source ? 'warn' : 'loading', hasCatalog ? `${currentServers.length} disponibles` : lastContentStatus.source ? 'Sin proyectos' : 'Conectando')
+    setServiceState(microsoftNode, microsoftServiceStatus, lastMinecraftProfile?.mode === 'premium' ? 'ok' : 'warn', lastMinecraftProfile?.mode === 'premium' ? 'Conectado' : 'Modo offline')
+    setServiceState(discordNode, discordServiceStatus, lastDiscordUser ? 'ok' : 'warn', lastDiscordUser ? 'Conectado' : 'Sin vincular')
 }
 
 function renderDynamicNews(items = []) {
@@ -1078,6 +1104,11 @@ function renderCatalogStats() {
     const count = document.getElementById('catalog-count')
     const hasFilters = Boolean(catalogFilter || catalogAccessFilter !== 'all' || catalogStateFilter !== 'all')
     if (count) count.innerText = hasFilters ? `${visible} de ${total}` : `${total} ${currentLanguage === 'en' ? 'active' : 'activos'}`
+    const activeFilterCount = Number(catalogAccessFilter !== 'all') + Number(catalogStateFilter !== 'all')
+    if (catalogFilterCount) {
+        catalogFilterCount.innerText = String(activeFilterCount)
+        catalogFilterCount.hidden = activeFilterCount === 0
+    }
 }
 
 function drawSkinHead(canvas, image) {
@@ -1501,7 +1532,7 @@ function renderProjectPreview(project) {
     renderAccessOptions(project)
     setHeroAccess(project && isRestricted(project) ? 'Acceso privado' : 'Acceso publico', project && isRestricted(project) ? 'locked' : 'public')
     setLaunchStatus(project ? (status.mode === 'maintenance' ? 'Instancia en mantenimiento' : 'Comprobando acceso') : 'Lista para seleccionar', status.mode === 'maintenance' ? 'maintenance' : 'checking')
-    setButtonState({ canDelete: Boolean(project?.isInstalled), canInstall: false, canPlay: false })
+    setAccessPendingButtonState(project, status)
     renderCatalogStats()
 }
 
@@ -1578,17 +1609,37 @@ function closeInstanceContextMenu() {
 function openInstanceContextMenu(event, server) {
     if (!instanceContextMenu || !server) return
     event.preventDefault()
+    event.stopPropagation()
     contextMenuProjectId = server.id
-    targetServerId = server.id
-    selectedProject = server
-    renderProjectPreview(server)
-    renderServerCards()
     const status = getProjectStatus(server)
-    instanceContextMenu.innerHTML = '<button onclick="openSelectedInstanceFolder(contextMenuProjectId); closeInstanceContextMenu()">Archivos</button><button onclick="openInstanceContent(contextMenuProjectId); closeInstanceContextMenu()">Contenido</button><button onclick="recheckDiscordAccess(); closeInstanceContextMenu()">Comprobar acceso</button>' + (status.mode !== 'missing' ? '<button class="danger" onclick="eliminarInstancia(); closeInstanceContextMenu()">Eliminar instalacion</button>' : '')
+    instanceContextMenu.innerHTML = '<button onclick="openSelectedInstanceFolder(contextMenuProjectId); closeInstanceContextMenu()">Carpeta</button><button onclick="openInstanceContent(contextMenuProjectId); closeInstanceContextMenu()">Contenido</button><button onclick="recheckProjectAccess(contextMenuProjectId); closeInstanceContextMenu()">Comprobar acceso</button>' + (['ready', 'update'].includes(status.mode) ? '<button class="danger" onclick="eliminarInstancia(contextMenuProjectId); closeInstanceContextMenu()">Eliminar instalacion</button>' : '')
     instanceContextMenu.style.left = Math.min(event.clientX, window.innerWidth - 230) + 'px'
     instanceContextMenu.style.top = Math.min(event.clientY, window.innerHeight - 170) + 'px'
     instanceContextMenu.classList.add('open')
     instanceContextMenu.setAttribute('aria-hidden', 'false')
+}
+
+function getCardActionIcon(mode) {
+    if (mode === 'ready') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>'
+    if (mode === 'update') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 0 1 6.2 3.8L20 7v5h-5l1.8-1.8A5 5 0 1 0 17 15h2.2A7 7 0 1 1 12 5z"/></svg>'
+    if (mode === 'maintenance' || mode === 'error') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5h2v9h-2zm0 11h2v2h-2zM12 2l10 19H2z"/></svg>'
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v10l3.5-3.5 1.4 1.4-5.9 5.9-5.9-5.9 1.4-1.4L11 13zm-6 15h14v2H5z"/></svg>'
+}
+
+function selectCatalogProject(server, status, action = '') {
+    pendingCardAction = action ? { projectId: server.id, action } : null
+    targetServerId = server.id
+    document.querySelectorAll('.card').forEach((item) => item.classList.toggle('active', item.dataset.serverId === server.id))
+    renderProjectPreview(server)
+    if (status.mode === 'maintenance') {
+        pendingCardAction = null
+        setHeroAccess('No disponible', 'locked')
+        setLaunchStatus('Instancia en mantenimiento', 'maintenance')
+        setButtonState({ canDelete: Boolean(server.isInstalled) })
+        showToast(getMaintenanceMessage(server), 'info')
+        return
+    }
+    requestProjectAccess(server.id)
 }
 
 function renderServerCards() {
@@ -1614,30 +1665,27 @@ function renderServerCards() {
         card.innerHTML = `
             <div class="card-media" style="${imageUrl ? `background-image:url('${escapeHtml(imageUrl)}')` : ''}">
                 <span class="card-lock">${locked ? 'Privada' : 'Publica'}</span>
-                <span class="card-state">${escapeHtml(status.label)}</span>
             </div>
             <div class="card-body">
                 <div class="card-title">${escapeHtml(server.name)}</div>
                 <div class="card-description">${escapeHtml(server.description || 'Sin descripcion disponible.')}</div>
                 <div class="card-meta"><span>${escapeHtml(server.minecraft_version || '-')}</span><span class="dot"></span><span>${escapeHtml(titleCase(server.loader || 'vanilla'))}</span><span class="card-version">v${escapeHtml(server.project_version || '1.0.0')}</span></div>
+                <div class="card-footer"><span class="card-state">${escapeHtml(status.label)}</span><span class="card-actions"><button class="card-quick-action" type="button" title="${escapeHtml(status.action)}" aria-label="${escapeHtml(status.action)}">${getCardActionIcon(status.mode)}</button><button class="card-more-action" type="button" title="Más opciones" aria-label="Más opciones"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg></button></span></div>
             </div>
         `
 
         card.oncontextmenu = (event) => openInstanceContextMenu(event, server)
+        card.querySelector('.card-quick-action')?.addEventListener('click', (event) => {
+            event.stopPropagation()
+            const action = status.mode === 'ready' ? 'play' : ['install', 'update'].includes(status.mode) ? 'install' : ''
+            selectCatalogProject(server, status, action)
+        })
+        card.querySelector('.card-more-action')?.addEventListener('click', (event) => {
+            event.stopPropagation()
+            openInstanceContextMenu(event, server)
+        })
 
-        card.onclick = () => {
-            targetServerId = server.id
-            document.querySelectorAll('.card').forEach((item) => item.classList.toggle('active', item.dataset.serverId === server.id))
-            renderProjectPreview(server)
-            if (status.mode === 'maintenance') {
-                setHeroAccess('No disponible', 'locked')
-                setLaunchStatus('Instancia en mantenimiento', 'maintenance')
-                setButtonState({ canDelete: Boolean(server.isInstalled) })
-                showToast(getMaintenanceMessage(server), 'info')
-                return
-            }
-            requestProjectAccess(server.id)
-        }
+        card.onclick = () => selectCatalogProject(server, status)
         grid.appendChild(card)
     })
 
@@ -1682,20 +1730,51 @@ function initIntro() {
     introVideo.play().catch(() => introOverlay.classList.add('needs-start'))
 }
 
-function setButtonState({ canInstall = false, canPlay = false, canStop = false, canDelete = false, installLabel = 'Instalar' } = {}) {
+function setAccessPendingButtonState(project = selectedProject, status = getProjectStatus(project)) {
+    setButtonState({
+        canDelete: Boolean(project?.isInstalled),
+        canInstall: ['install', 'update'].includes(status.mode),
+        canPlay: status.mode === 'ready',
+        installLabel: status.mode === 'update' ? 'Actualizar' : 'Instalar',
+        actionsDisabled: true
+    })
+}
+
+function setPrimaryGameButtonState(button, { visible = false, running = false, disabled = false } = {}) {
+    if (!button) return
+    button.style.display = visible ? 'inline-flex' : 'none'
+    button.disabled = disabled
+    button.dataset.mode = running ? 'stop' : 'play'
+    button.classList.toggle('is-stop', running)
+    button.setAttribute('aria-label', running ? 'Parar Minecraft' : 'Jugar')
+    button.title = running ? 'Parar Minecraft' : 'Jugar'
+    const icon = button.querySelector('svg')
+    if (icon) icon.innerHTML = running ? '<path d="M6 6h12v12H6z"/>' : '<path d="m8 5 11 7-11 7z"/>'
+    const label = button.querySelector('span')
+    if (label) {
+        label.dataset.i18n = running ? 'action.stop' : 'action.play'
+        label.innerText = running ? t('action.stop', 'Parar') : t('action.play', 'Jugar')
+    }
+}
+
+function setButtonState({ canInstall = false, canPlay = false, canStop = false, canDelete = false, installLabel = 'Instalar', actionsDisabled = false } = {}) {
     const installButton = document.querySelector('.btn.install')
     const playButton = document.querySelector('.btn.play')
-    const stopButton = document.querySelector('.btn.kill')
     const deleteButton = document.querySelector('.btn.delete-instance')
     installButtonLabel = installLabel
     if (installButton) {
         installButton.style.display = canInstall ? 'inline-flex' : 'none'
-        installButton.innerText = installLabel
+        installButton.disabled = !canInstall || actionsDisabled
+        const label = installButton.querySelector('span')
+        if (label) label.innerText = installLabel
+        else installButton.innerText = installLabel
         installButton.dataset.action = installLabel.toLowerCase()
     }
-    if (playButton) playButton.style.display = canPlay ? 'inline-flex' : 'none'
-    if (stopButton) stopButton.style.display = canStop ? 'inline-flex' : 'none'
-    if (deleteButton) deleteButton.style.display = canDelete ? 'inline-flex' : 'none'
+    setPrimaryGameButtonState(playButton, { visible: canPlay || canStop, running: canStop, disabled: canStop ? false : (!canPlay || actionsDisabled) })
+    if (deleteButton) {
+        deleteButton.style.display = canDelete ? 'inline-flex' : 'none'
+        deleteButton.disabled = !canDelete || actionsDisabled
+    }
 }
 
 function renderSkinPreview(skinUrl, capeUrl = '', animationMode = 'walk') {
@@ -2152,6 +2231,7 @@ window.switchTab = function(tabId) {
     document.querySelectorAll('.tab-view').forEach((view) => view.classList.remove('active'))
     document.getElementById(`tab-${requestedTab}`)?.classList.add('active')
     document.getElementById(`view-${requestedTab}`)?.classList.add('active')
+    if (requestedTab === 'settings') ipcRenderer.send('request-diagnostic-report')
 }
 window.openSupport = function() { ipcRenderer.send('open-external-url', SUPPORT_URL) }
 window.openCommunityDiscord = function() { ipcRenderer.send('open-external-url', BUG_DISCORD_URL) }
@@ -2231,6 +2311,19 @@ window.filterCatalog = function(value) { catalogFilter = String(value || '').tri
 window.filterCatalogAccess = function(value) { catalogAccessFilter = ['public', 'private'].includes(value) ? value : 'all'; renderServerCards() }
 window.filterCatalogState = function(value) { catalogStateFilter = ['installed', 'updates', 'missing'].includes(value) ? value : 'all'; renderServerCards() }
 window.sortCatalog = function(value) { catalogSort = ['name', 'version'].includes(value) ? value : 'featured'; renderServerCards() }
+window.toggleCatalogFilters = function(target = 'filters') {
+    if (!catalogFilterDrawer) return
+    const open = !catalogFilterDrawer.classList.contains('open')
+    catalogFilterDrawer.classList.toggle('open', open)
+    catalogFilterDrawer.setAttribute('aria-hidden', String(!open))
+    document.querySelectorAll('.catalog-tool-button').forEach((button) => button.setAttribute('aria-expanded', String(open)))
+    if (open) setTimeout(() => document.getElementById(target === 'sort' ? 'catalog-sort' : 'catalog-access-filter')?.focus(), 180)
+}
+window.closeCatalogFilters = function() {
+    catalogFilterDrawer?.classList.remove('open')
+    catalogFilterDrawer?.setAttribute('aria-hidden', 'true')
+    document.querySelectorAll('.catalog-tool-button').forEach((button) => button.setAttribute('aria-expanded', 'false'))
+}
 window.minimize = function() { ipcRenderer.send('minimize-app') }
 window.toggleMaximize = function() { ipcRenderer.send('toggle-maximize-app') }
 window.closeApp = function() { ipcRenderer.send('close-app') }
@@ -2288,7 +2381,11 @@ function renderDiagnosticReport(data = {}) {
     if (!diagnosticGrid) return
     const rows = Array.isArray(data.rows) ? data.rows : []
     diagnosticGrid.innerHTML = rows.length
-        ? rows.map((row) => '<div class="diagnostic-row" data-state="' + escapeHtml(row.state || 'warn') + '"><strong>' + escapeHtml(row.key) + '</strong><span>' + escapeHtml(row.value) + '</span></div>').join('')
+        ? rows.map((row) => {
+            const state = row.state === 'ok' ? 'ok' : row.state === 'error' ? 'error' : 'warn'
+            const icon = state === 'ok' ? '✓' : state === 'error' ? '×' : '!'
+            return '<div class="diagnostic-row" data-state="' + state + '"><i class="diagnostic-state-icon" aria-hidden="true">' + icon + '</i><strong>' + escapeHtml(row.key) + '</strong><span>' + escapeHtml(row.value) + '</span></div>'
+        }).join('')
         : '<div class="diagnostic-empty">No hay diagnostico disponible.</div>'
 }
 
@@ -2350,9 +2447,21 @@ window.checkVersions = function() {
 }
 window.refreshMinecraftProfile = function() { openLogPanel(); ipcRenderer.send('refresh-minecraft-profile') }
 window.chooseLocalSkin = function() { ipcRenderer.send('select-local-skin', { variant: appearanceVariantSelect?.value || skinVariantSelect?.value || 'classic' }) }
-window.recheckDiscordAccess = function() { if (!targetServerId) return; openLogPanel(); requestProjectAccess(targetServerId, '', true) }
+window.recheckProjectAccess = function(projectId = '') {
+    const project = getProjectById(projectId) || selectedProject
+    if (!project?.id) return showToast('Selecciona una instancia primero.', 'info')
+    if (project.id !== selectedProject?.id) {
+        targetServerId = project.id
+        document.querySelectorAll('.card').forEach((item) => item.classList.toggle('active', item.dataset.serverId === project.id))
+        renderProjectPreview(project)
+        renderServerCards()
+    }
+    openLogPanel()
+    requestProjectAccess(project.id, '', true)
+}
+window.recheckDiscordAccess = function() { window.recheckProjectAccess(targetServerId) }
 window.loginDiscord = function() { ipcRenderer.send('login-discord') }
-window.logoutDiscord = function() { ipcRenderer.send('logout-discord'); lastDiscordUser = null; renderDiscordState() }
+window.logoutDiscord = function() { ipcRenderer.send('logout-discord'); lastDiscordUser = null; renderDiscordState(); renderServiceStatus() }
 window.instalar = function() {
     if (selectedProject?.maintenance) return showToast(getMaintenanceMessage(selectedProject), 'error')
     if (selectedProject?.isUpdateAvailable) {
@@ -2364,17 +2473,30 @@ window.instalar = function() {
     openLogPanel()
     ipcRenderer.send('install-pack', { update: Boolean(selectedProject?.isUpdateAvailable) })
 }
-window.eliminarInstancia = function() {
-    if (!targetServerId || !selectedProject) return
-    const confirmed = window.confirm(`Eliminar los archivos locales de "${selectedProject.name}"?\n\nPodras instalarla de nuevo despues.`)
+window.eliminarInstancia = function(projectId = '') {
+    const project = getProjectById(projectId) || selectedProject
+    if (!project?.id) return
+    const confirmed = window.confirm(`Eliminar los archivos locales de "${project.name}"?\n\nPodras instalarla de nuevo despues.`)
     if (!confirmed) return
     openLogPanel()
     setLaunchStatus('Eliminando archivos locales')
-    ipcRenderer.send('delete-instance', { serverId: targetServerId })
+    ipcRenderer.send('delete-instance', { serverId: project.id })
 }
 window.jugar = function() { if (selectedProject?.maintenance) return showToast(getMaintenanceMessage(selectedProject), 'error'); openLogPanel(); ipcRenderer.send('launch-game') }
 window.detenerJuego = function() { ipcRenderer.send('kill-instance') }
-window.abrirCarpeta = function() { ipcRenderer.send('open-game-folder') }
+window.runPrimaryGameAction = function() {
+    const button = document.getElementById('game-action-button')
+    if (button?.dataset.mode === 'stop') window.detenerJuego()
+    else window.jugar()
+}
+window.abrirCarpeta = function() {
+    if (!selectedProject?.id) return showToast('Selecciona una instancia primero.', 'info')
+    window.openSelectedInstanceFolder(selectedProject.id)
+}
+window.openSelectedInstanceMenu = function(event) {
+    if (!selectedProject) return showToast('Selecciona una instancia primero.', 'info')
+    openInstanceContextMenu(event, selectedProject)
+}
 window.openSelectedInstanceFolder = function(projectId = '') {
     const project = projectId ? getProjectById(projectId) : getSelectedContentProject()
     ipcRenderer.send('open-instance-folder', { projectId: project?.id || targetServerId || '' })
@@ -2501,6 +2623,7 @@ ipcRenderer.on('local-pack-imported', (event, project) => {
         renderLocalEditor(project)
         renderLobby()
         if (targetServerId === project.id) renderProjectPreview(project)
+        renderServiceStatus()
     }
     showToast('Modpack local importado.', 'success')
 })
@@ -2515,6 +2638,7 @@ ipcRenderer.on('local-instance-deleted', (event, data = {}) => {
     if (targetServerId === data.id) { targetServerId = null; selectedProject = null }
     renderLocalInstances()
     renderLobby()
+    renderServiceStatus()
     showToast('Instancia local quitada.')
 })
 ipcRenderer.on('local-instance-updated', (event, project) => {
@@ -2524,6 +2648,7 @@ ipcRenderer.on('local-instance-updated', (event, project) => {
     renderServerCards()
     renderLobby()
     if (targetServerId === project.id) renderProjectPreview(project)
+    renderServiceStatus()
     showToast('Configuracion local guardada.', 'success')
 })
 ipcRenderer.on('local-assets-added', (event, data = {}) => {
@@ -2551,6 +2676,7 @@ ipcRenderer.on('modrinth-modpack-imported', (event, project) => {
         renderServerCards()
         renderLobby()
         renderProjectPreview(project)
+        renderServiceStatus()
     }
     showToast('Modpack de comunidad agregado a Local.', 'success')
 })
@@ -2587,15 +2713,18 @@ ipcRenderer.on('content-news', (event, items = []) => {
     renderDynamicNews(items)
 })
 ipcRenderer.on('content-status', (event, status = {}) => {
+    lastContentStatus = status || {}
     const sourceLabels = { remote: 'remota central', 'legacy-remote': 'remota de compatibilidad', cache: 'cache verificada', packaged: 'incluida en el launcher', 'legacy-local': 'local de emergencia' }
     logHistory.push(`Contenido: ${status.projects || 0} proyectos y ${status.news || 0} noticias desde fuente ${sourceLabels[status.source] || status.source || 'desconocida'}.`)
     renderLogHistory()
+    renderServiceStatus()
 })
 ipcRenderer.on('all-servers-info', (event, servers) => {
     currentServers = Array.isArray(servers) ? servers : []
     if (currentServers.length && !selectedProject) { const initialProject = currentServers.find((server) => server.featured) || currentServers[0]; targetServerId = initialProject.id; renderProjectPreview(initialProject) }
     renderServerCards()
     renderMinecraftConfigSourceOptions()
+    renderServiceStatus()
 })
 
 ipcRenderer.on('access-granted', (event, data) => {
@@ -2620,13 +2749,21 @@ ipcRenderer.on('access-granted', (event, data) => {
     setLaunchStatus(isUpdateAvailable ? 'Actualizacion disponible' : isInstalled ? 'Lista para jugar' : 'Lista para instalar', status.mode)
     renderServerCards()
     setButtonState({ canInstall: !isInstalled || isUpdateAvailable, canPlay: isInstalled && !isUpdateAvailable, canStop: false, canDelete: isInstalled, installLabel: isUpdateAvailable ? 'Actualizar' : 'Instalar' })
+    renderServiceStatus()
+    ipcRenderer.send('request-diagnostic-report')
+    if (pendingCardAction?.projectId === project.id) {
+        const action = pendingCardAction.action
+        pendingCardAction = null
+        if (action === 'play' && isInstalled && !isUpdateAvailable) setTimeout(() => window.jugar(), 0)
+        if (action === 'install' && (!isInstalled || isUpdateAvailable)) setTimeout(() => window.instalar(), 0)
+    }
 })
 
 ipcRenderer.on('access-check-delayed', (event, data = {}) => {
     if (!finishAccessRequest(data)) return
     setHeroAccess('Discord ocupado', 'checking')
     setLaunchStatus('Discord limito la consulta. Reintenta en unos segundos.')
-    setButtonState({ canDelete: Boolean(selectedProject?.isInstalled) })
+    setAccessPendingButtonState()
 })
 
 ipcRenderer.on('access-denied', (event, data = {}) => {
@@ -2634,20 +2771,21 @@ ipcRenderer.on('access-denied', (event, data = {}) => {
     setHeroAccess('Acceso restringido', 'locked')
     setLaunchStatus('Introduce una clave o vincula Discord')
     renderHeroDetails(selectedProject)
-    setButtonState({ canDelete: Boolean(selectedProject?.isInstalled) })
+    setAccessPendingButtonState()
+    pendingCardAction = null
+    renderServiceStatus()
 })
 
 ipcRenderer.on('discord-login-success', (event, user) => {
     lastDiscordUser = user || null
     renderDiscordState(lastDiscordUser)
     if (targetServerId) requestProjectAccess(targetServerId)
+    renderServiceStatus()
 })
 
 ipcRenderer.on('game-state', (event, running) => {
     const playButton = document.querySelector('.btn.play')
-    const stopButton = document.querySelector('.btn.kill')
-    if (playButton) playButton.style.display = running ? 'none' : (selectedProject?.isInstalled ? 'inline-flex' : 'none')
-    if (stopButton) stopButton.style.display = running ? 'inline-flex' : 'none'
+    setPrimaryGameButtonState(playButton, { visible: Boolean(running || selectedProject?.isInstalled), running: Boolean(running), disabled: false })
     setLaunchStatus(running ? 'Minecraft en ejecucion' : 'Lista para jugar')
 })
 
@@ -2655,7 +2793,12 @@ ipcRenderer.on('install-state', (event, isInstalling) => {
     const installButton = document.querySelector('.btn.install')
     const playButton = document.querySelector('.btn.play')
     const deleteButton = document.querySelector('.btn.delete-instance')
-    if (installButton) { installButton.disabled = isInstalling; installButton.innerText = isInstalling ? 'Instalando...' : installButtonLabel }
+    if (installButton) {
+        installButton.disabled = isInstalling
+        const label = installButton.querySelector('span')
+        if (label) label.innerText = isInstalling ? 'Instalando' : installButtonLabel
+        else installButton.innerText = isInstalling ? 'Instalando' : installButtonLabel
+    }
     if (playButton) playButton.disabled = isInstalling
     if (deleteButton) deleteButton.disabled = isInstalling
     if (isInstalling) {
@@ -2684,6 +2827,7 @@ ipcRenderer.on('minecraft-profile', (event, profile) => {
     if (capeSourceLabel) capeSourceLabel.innerText = activeCape?.alias || (currentLanguage === 'en' ? 'No active cape' : 'Sin capa activa')
     if (appearanceModal?.classList.contains('open') && !appearanceOperation.loading) renderAppearanceManager(profile)
     previewSkin()
+    renderServiceStatus()
 })
 
 ipcRenderer.on('playtime-stats', (event, projects) => {
@@ -2706,14 +2850,16 @@ ipcRenderer.on('instance-deleted', (event, data) => {
     progressBar.style.width = '0%'
     renderHeroDetails(selectedProject, data)
     renderServerCards()
+    renderServiceStatus()
     setLaunchStatus('Instancia eliminada   lista para instalar')
     setButtonState({ canInstall: true, canPlay: false, canStop: false, canDelete: false, installLabel: 'Instalar' })
 })
-ipcRenderer.on('premium-login-unavailable', () => { minecraftMode.innerText = 'No se pudo iniciar Microsoft'; renderMicrosoftSyncStatus({ mode: 'offline', premiumReady: false }) })
+ipcRenderer.on('premium-login-unavailable', () => { minecraftMode.innerText = 'No se pudo iniciar Microsoft'; renderMicrosoftSyncStatus({ mode: 'offline', premiumReady: false }); renderServiceStatus() })
 ipcRenderer.on('log', (event, msg) => { const lines = String(msg || '').split(/\r?\n/).filter((line) => line.trim()); logHistory.push(...lines); if (logHistory.length > 400) logHistory.splice(0, logHistory.length - 400); renderLogHistory(); const important = lines.find(shouldToastImportantLine); if (important) { setLaunchStatus('Error detectado', 'error'); showToast(important.slice(0, 140), 'error') } })
 ipcRenderer.on('progress', (event, percent) => { const safe = Math.max(0, Math.min(100, Number(percent) || 0)); progressBar.style.width = `${safe}%`; if (progressBar) progressBar.dataset.value = String(Math.round(safe)); if (safe > 0 && safe < 100) setLaunchStatus(`Procesando instancia - ${Math.round(safe)}%`, 'installing'); if (safe === 100) { setLaunchStatus('Preparacion completada', 'ready'); showToast('Instancia preparada.'); setButtonState({ canPlay: true, canStop: false, canDelete: true }) } })
 
 setButtonState()
+renderServiceStatus()
 try { renderMinecraftDefaultSettings(JSON.parse(localStorage.getItem('obsidian.minecraftDefaults') || 'null') || DEFAULT_MINECRAFT_DEFAULTS) } catch (err) { renderMinecraftDefaultSettings(DEFAULT_MINECRAFT_DEFAULTS) }
 initIntro()
 initOnboarding()
@@ -2732,6 +2878,11 @@ document.getElementById('code-input')?.addEventListener('keydown', (event) => {
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && introOverlay && !introOverlay.classList.contains('hidden')) {
         closeIntro()
+        return
+    }
+    if (event.key === 'Escape' && catalogFilterDrawer?.classList.contains('open')) {
+        window.closeCatalogFilters()
+        catalogFilterToggle?.focus()
         return
     }
     if (event.ctrlKey && event.key.toLowerCase() === 'f') {
@@ -2803,7 +2954,10 @@ localDropZone?.addEventListener('drop', (event) => {
 
 
 
-document.addEventListener('click', (event) => { if (instanceContextMenu?.classList.contains('open') && !instanceContextMenu.contains(event.target)) closeInstanceContextMenu() })
+document.addEventListener('click', (event) => {
+    if (instanceContextMenu?.classList.contains('open') && !instanceContextMenu.contains(event.target)) closeInstanceContextMenu()
+    if (catalogFilterDrawer?.classList.contains('open') && !event.target.closest('.catalog-actions')) window.closeCatalogFilters()
+})
 
 
 

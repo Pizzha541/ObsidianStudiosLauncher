@@ -255,9 +255,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.on('close-app', () => {
     finishPlaytimeSession()
-    if (minecraftProcess) {
-        try { minecraftProcess.kill() } catch (e) {}
-    }
+    if (minecraftProcess && typeof minecraftProcess.unref === 'function') minecraftProcess.unref()
     stopDiscordCallbackServer()
     app.quit()
 })
@@ -684,7 +682,7 @@ function runLauncherUpdateInstaller(installerPath, update = {}) {
     child.unref()
     setTimeout(() => {
         finishPlaytimeSession()
-        if (minecraftProcess) { try { minecraftProcess.kill() } catch (err) {} }
+        if (minecraftProcess && typeof minecraftProcess.unref === 'function') minecraftProcess.unref()
         stopDiscordCallbackServer()
         app.quit()
     }, 900)
@@ -2320,14 +2318,14 @@ function getDiagnosticRows(project = currentProject) {
     const microsoftReady = Boolean(minecraftProfile && (minecraftProfile.username || minecraftProfile.access_token))
     const accessReady = Boolean(project && (project.local || !project.discord_role_id || currentProject?.id === project.id))
     return [
-        { key: 'Java', value: javaMajor ? 'Java ' + javaMajor + ' / requerido ' + requiredJava : 'No detectado / requerido ' + requiredJava, state: javaMajor >= requiredJava ? 'ok' : 'warn' },
-        { key: 'Minecraft', value: project?.minecraft_version || 'Sin instancia', state: project?.minecraft_version ? 'ok' : 'warn' },
-        { key: 'Mod Loader', value: hasLoader ? (project.loader + ' ' + (project.loader_version || '')).trim() : 'No configurado', state: hasLoader ? 'ok' : 'warn' },
-        { key: 'RAM', value: ramGB + ' GB', state: ramGB >= 4 ? 'ok' : 'warn' },
-        { key: 'Archivos', value: hasFiles ? (state.isInstalled ? 'Instalada' : 'Carpeta creada') : 'Sin instalar', state: hasFiles ? 'ok' : 'warn' },
-        { key: 'Internet', value: cachedServerList.length ? 'Catalogo sincronizado' : 'Sin catalogo remoto', state: cachedServerList.length ? 'ok' : 'warn' },
-        { key: 'Cuenta Microsoft', value: microsoftReady ? (minecraftProfile.username || 'Sincronizada') : 'No vinculada', state: microsoftReady ? 'ok' : 'warn' },
-        { key: 'Acceso', value: accessReady ? 'Concedido o publico' : 'Pendiente', state: accessReady ? 'ok' : 'warn' }
+        { key: 'Java', value: javaMajor >= requiredJava ? 'Listo (Java ' + javaMajor + ')' : 'Necesita Java ' + requiredJava, state: javaMajor >= requiredJava ? 'ok' : 'warn' },
+        { key: 'Versión de Minecraft', value: project?.minecraft_version ? 'v' + project.minecraft_version : 'Selecciona una instancia', state: project?.minecraft_version ? 'ok' : 'warn' },
+        { key: 'Cargador de mods', value: hasLoader ? (project.loader + ' ' + (project.loader_version || '')).trim() : 'Falta configurar', state: hasLoader ? 'ok' : 'warn' },
+        { key: 'Memoria asignada', value: ramGB >= 4 ? ramGB + ' GB (correcto)' : ramGB + ' GB; usa al menos 4 GB', state: ramGB >= 4 ? 'ok' : 'warn' },
+        { key: 'Instalación', value: hasFiles ? (state.isInstalled ? 'Lista' : 'Incompleta') : 'Todavía no instalada', state: state.isInstalled ? 'ok' : 'warn' },
+        { key: 'Catálogo', value: cachedServerList.length ? 'Conectado' : 'No se pudo sincronizar', state: cachedServerList.length ? 'ok' : 'warn' },
+        { key: 'Cuenta Microsoft', value: microsoftReady ? (minecraftProfile.username || 'Conectada') : 'Modo offline', state: microsoftReady ? 'ok' : 'warn' },
+        { key: 'Acceso privado', value: accessReady ? 'Listo' : 'Pendiente de comprobar', state: accessReady ? 'ok' : 'warn' }
     ]
 }
 
